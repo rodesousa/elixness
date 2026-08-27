@@ -102,7 +102,7 @@ defmodule Elixness.Chat do
            emit: streamer) do
       {:ok, content, %{usage: usage}} ->
         conversation = conversation ++ [%{role: "assistant", content: content}]
-        IO.puts("  (usage: prompt=#{usage["prompt_tokens"]} completion=#{usage["completion_tokens"]})")
+        IO.puts("  (usage: prompt=#{usage["prompt_tokens"]} completion=#{usage["completion_tokens"]} cost=#{format_cost(usage["cost"])})")
         IO.puts(Elixness.Trace.render_summary(trace))
         {:ok, content, conversation}
 
@@ -113,18 +113,21 @@ defmodule Elixness.Chat do
 
   # Affiche les tool_calls en direct : "[tool] name args → result (durée)"
   # et les tokens LLM (streaming) : "texte" au fur et à mesure.
+  # `safe_io` : les args/result viennent du LLM et peuvent contenir des
+  # octets UTF-8 invalides (ex. pattern search_files avec accents) qui font
+  # crasher :io.put_chars sur :standard_io — on sanitize avant d'écrire.
   defp stream_tools do
     receive do
       {:tool_start, name, args} ->
-        IO.puts("  → #{name} #{args}")
+        safe_io(:puts, "  → #{name} #{args}")
         stream_tools()
 
       {:tool_end, name, result, duration} ->
-        IO.puts("  ✓ #{name} → #{result} (#{duration}ms)")
+        safe_io(:puts, "  ✓ #{name} → #{result} (#{duration}ms)")
         stream_tools()
 
       {:token, text} ->
-        IO.write(text)
+        safe_io(:write, text)
         stream_tools()
 
       :stop ->
@@ -132,6 +135,23 @@ defmodule Elixness.Chat do
 
       _ ->
         stream_tools()
+    end
+  end
+
+  defp safe_io(kind, text) do
+    safe = sanitize_utf8(to_string(text))
+
+    case kind do
+      :write -> IO.write(safe)
+      :puts -> IO.puts(safe)
+    end
+  end
+
+  # Remplace les octets invalides par U+FFFD (même helper que Tools).
+  defp sanitize_utf8(binary) do
+    case :unicode.characters_to_binary(binary, :utf8, :utf8) do
+      {:error, converted, _} -> converted
+      converted -> converted
     end
   end
 
@@ -260,4 +280,8 @@ defmodule Elixness.Chat do
       _ -> "no"
     end
   end
+
+  # Affiche le coût en $ lisible (ex. "0.00152" ou "5.0e-5" → "0.00005").
+  defp format_cost(nil), do: "?"
+  defp format_cost(cost), do: :erlang.float_to_binary(cost, [:compact, decimals: 6])
 end
