@@ -88,6 +88,31 @@ sans clé (150 calls/jour, 3 QPS), ou clé API (20$ signup + 10$/mois, Search $7
 req). Même provider qu'opencode → comparaison honnête. À brancher pour le test
 de recherche internet (DuckDuckGo = fallback).
 
+## 4. Le tool `explore_repo` — l'exploration mécanique (différenciant)
+
+**Problème observé** : le benchmark elixness vs Hermes (explorer deepseek-harness)
+a montré qu'elixness explore trop (17 tools, 174k prompt, 8 turns saturés avant
+fin) alors que Hermes finit en 92s/31k prompt. Le modèle explore manuellement
+(relit tout) → cher + saturation.
+
+**La solution** : un tool `explore_repo` mécanique — le harness scanne + lit +
+résume le repo SANS que le modèle explore (comme le flatmap pour la traduction).
+
+**Pourquoi c'est un différenciant** : AUCUN des 3 harness (deepseek, opencode,
+Hermes) n'a de tool d'exploration dédié — ils explorent tous par composition
+(glob + grep + read). Un `explore_repo` qui résume la structure d'un repo en 1
+appel serait un avantage unique pour elixness.
+
+**Design envisagé** :
+- `explore_repo(path)` → le harness fait glob (structure) + extrait les points
+  clés (moduledoc, définitions, TODO) → résumé structuré → retourne au modèle
+- Le modèle n'a plus besoin de lire fichier par fichier
+- Basé sur ripgrep (le backbone recommandé) si dispo, sinon glob + read
+
+**Benchmark attendu** : rejouer « explorer deepseek-harness » → elixness avec
+explore_repo devrait passer de 174k prompt/8 turns à ~30k prompt/2-3 turns →
+compétitif avec Hermes (31k).
+
 ## Après (backlog)
 
 - Le dropdown fichiers (ratatui) — les fichiers en contexte visibles
