@@ -443,6 +443,44 @@ harness) + `Elixness.Trace` (observabilité) + les fixes Discover/UTF-8 :
   → 0 fichier) et UTF-8 (octets binaires → Jason.EncodeError) — les deux
   corrigés. Sans la trace, « 0 agents » restait incompréhensible.
 
+## opencode — testable avec l'API de Hermes (provider nous)
+
+opencode (le 3e concurrent) peut être lancé avec l'API de Hermes (provider
+`nous`, modèle `deepseek/deepseek-v4-flash`) — vérifié et testé :
+
+**Config** (`opencode.jsonc`) — provider OpenAI-compatible :
+```jsonc
+{
+  "provider": {
+    "nous": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Nous",
+      "options": {
+        "baseURL": "https://inference-api.nousresearch.com/v1",
+        "apiKey": "{token de ~/.hermes/auth.json}"
+      },
+      "models": {
+        "deepseek-v4-flash": { "name": "DeepSeek V4 Flash" }
+      }
+    }
+  }
+}
+```
+
+**Commande** (via bun dans le monorepo ~/git/opencode) :
+```
+bun run opencode run 'message' --model nous/deepseek-v4-flash
+```
+Testé : `> build · deepseek/deepseek-v4-flash → OK`.
+
+**Notes** : `bun install --ignore-scripts` (tree-sitter-powershell cassé) ;
+opencode pas installé globalement — passer par l'entrée source du monorepo.
+Le token est lu sans être affiché.
+
+**La batterie de tests** : 3 concurrents — **elixness** (flatmap), **C**
+(Hermes complet), **opencode** (via l'API Hermes). Comparer sur les 4 axes
+(coût, temps, qualité, traçage) avec le même prompt et les mêmes fichiers.
+
 ## Notes
 
 - Le token est lu brut depuis auth.json : s'il est expiré, l'API répond 401 et

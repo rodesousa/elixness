@@ -42,18 +42,21 @@ defmodule Elixness.Loop do
   Lance le loop. Retourne `{:ok, content, %{usage: usage, turns: n}}` où
   content est la réponse finale du modèle, ou `{:error, raison}`.
 
-  `inbox` (optionnel) : pid d'un `Elixness.Inbox`. À chaque turn, le loop
-  draine la file et ajoute les messages en attente à la conversation —
-  c'est le steering : n'importe qui peut injecter un message en cours de
-  travail.
-
-  `messages` (optionnel) : liste complète de messages (ex. la conversation
-  d'un chat). Par défaut, construit `[system, user_task]`.
-
-  `trace` (optionnel) : pid d'un `Elixness.Trace` — journalise chaque
-  tool_call exécuté (time, args, résultat, durée). L'observabilité du harness.
+  Options (keyword list) :
+  - `tools` : les tool schemas exposés (défaut `Elixness.Tools.schemas()`).
+  - `inbox` : pid d'un `Elixness.Inbox` — le loop draine à chaque turn
+    (steering : injecter des messages en cours de travail).
+  - `messages` : liste complète de messages (ex. conversation d'un chat).
+    Par défaut construit `[system, user_task]`.
+  - `trace` : pid d'un `Elixness.Trace` — journalise chaque tool_call
+    exécuté (time, args, résultat, durée). L'observabilité du harness.
   """
-  def run(llm, model, system, user_task, tools \\ Elixness.Tools.schemas(), inbox \\ nil, messages \\ nil, trace \\ nil) do
+  def run(llm, model, system, user_task, opts \\ []) do
+    tools = Keyword.get(opts, :tools, Elixness.Tools.schemas())
+    inbox = Keyword.get(opts, :inbox)
+    messages = Keyword.get(opts, :messages)
+    trace = Keyword.get(opts, :trace)
+
     messages =
       messages ||
         [

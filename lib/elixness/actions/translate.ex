@@ -59,7 +59,7 @@ defmodule Elixness.Actions.Translate do
         "Keep code blocks, backticks, identifiers and structure intact.\n" <>
         "When done, reply with a short confirmation."
 
-    case Elixness.Loop.run(state.llm, model, system, task, Elixness.Tools.schemas(), params[:inbox]) do
+    case Elixness.Loop.run(state.llm, model, system, task, tools: Elixness.Tools.schemas(), inbox: params[:inbox]) do
       {:ok, content, %{usage: usage, turns: turns}} ->
         %{
           file: file,

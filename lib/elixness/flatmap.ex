@@ -36,7 +36,7 @@ defmodule Elixness.Flatmap do
         fn job ->
           # Chaque agent a son propre trace (observabilité par fichier).
           {:ok, trace} = Elixness.Trace.start_link()
-          r = Loop.run(auth, model, system, task_for(job, task), Elixness.Tools.schemas(), nil, nil, trace)
+          r = Loop.run(auth, model, system, task_for(job, task), tools: Elixness.Tools.schemas(), trace: trace)
           {r, Elixness.Trace.summary(trace)}
         end,
         max_concurrency: max(length(jobs), 1),

@@ -90,7 +90,7 @@ defmodule Elixness.Chat do
     # Chaque envoi a son trace (observabilité des tool_calls du chat).
     {:ok, trace} = Elixness.Trace.start_link()
 
-    case Loop.run(auth, Elixness.LLM.default_model(), system, "", Elixness.Tools.schemas(), nil, messages, trace) do
+    case Loop.run(auth, Elixness.LLM.default_model(), system, "", tools: Elixness.Tools.schemas(), messages: messages, trace: trace) do
       {:ok, content, %{usage: usage}} ->
         conversation = conversation ++ [%{role: "assistant", content: content}]
         IO.puts("  (usage: prompt=#{usage["prompt_tokens"]} completion=#{usage["completion_tokens"]})")

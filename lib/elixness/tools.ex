@@ -242,7 +242,7 @@ defmodule Elixness.Tools do
 
     task =
       Task.async(fn ->
-        Elixness.Loop.run(llm, model, system, prompt, Elixness.Tools.schemas(), inbox)
+        Elixness.Loop.run(llm, model, system, prompt, tools: Elixness.Tools.schemas(), inbox: inbox)
       end)
 
     Elixness.ChildRegistry.register(Elixness.ChildRegistry, child_id, %{
