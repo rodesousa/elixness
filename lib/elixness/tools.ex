@@ -34,11 +34,14 @@ defmodule Elixness.Tools do
         "type" => "function",
         "function" => %{
           "name" => "read_file",
-          "description" => "Read a text file from disk. Returns the file content.",
+          "description" =>
+            "Read a text file (or list a directory). Bounded like deepseek: returns numbered lines with offset/limit (default 2000 lines max), and a footer to continue. Use offset to paginate large files — do NOT read whole files at once.",
           "parameters" => %{
             "type" => "object",
             "properties" => %{
-              "path" => %{"type" => "string", "description" => "Absolute file path"}
+              "path" => %{"type" => "string", "description" => "Absolute file path or directory"},
+              "offset" => %{"type" => "integer", "description" => "1-based line to start from (default 1)"},
+              "limit" => %{"type" => "integer", "description" => "Max lines to return (default 2000)"}
             },
             "required" => ["path"]
           }
@@ -213,19 +216,55 @@ defmodule Elixness.Tools do
     %{} = decoded = Jason.decode!(args)
     # Le modèle peut utiliser `path` (schema elixness) ou `file` (nom Hermes)
     path = Map.get(decoded, "path") || Map.get(decoded, "file")
+    offset = Map.get(decoded, "offset", 1)
+    limit = Map.get(decoded, "limit", 2000)
 
-    case File.read(path) do
-      {:ok, content} ->
-        # Certains fichiers contiennent des octets non-UTF8 — on sanitize
-        # (sinon Jason crashe en encodant le body de la requête LLM).
-        if String.valid?(content) do
-          content
-        else
-          sanitize_utf8(content)
+    cond do
+      # Un dossier → liste les entrées (pattern opencode).
+      File.dir?(path) ->
+        entries =
+          path
+          |> File.ls!()
+          |> Enum.sort()
+          |> Enum.map(fn e ->
+            full = Path.join(path, e)
+            if File.dir?(full), do: e <> "/", else: e
+          end)
+          |> Enum.take(100)
+
+        "(directory) #{path}:\n" <> Enum.join(entries, "\n")
+
+      File.regular?(path) ->
+        case File.read(path) do
+          {:ok, content} ->
+            # Borné comme deepseek : lignes numérotées + footer de pagination.
+            lines = String.split(content, "\n")
+            total = length(lines)
+            start_line = max(offset, 1)
+            end_line = min(start_line + limit - 1, total)
+
+            shown =
+              lines
+              |> Enum.slice((start_line - 1)..(end_line - 1)//1)
+              |> Enum.with_index(start_line)
+              |> Enum.map(fn {line, n} -> "#{n}: #{line}" end)
+              |> Enum.join("\n")
+
+            footer =
+              if end_line < total do
+                "\n(Showing lines #{start_line}-#{end_line} of #{total}. Use offset=#{end_line + 1} to continue.)"
+              else
+                ""
+              end
+
+            sanitize_utf8(shown <> footer)
+
+          {:error, reason} ->
+            "ERROR: cannot read #{path}: #{inspect(reason)}"
         end
 
-      {:error, reason} ->
-        "ERROR: cannot read #{path}: #{inspect(reason)}"
+      true ->
+        "ERROR: #{path} is not a file or directory"
     end
   end
 
