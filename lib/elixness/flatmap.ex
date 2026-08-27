@@ -18,10 +18,15 @@ defmodule Elixness.Flatmap do
   Lance le flatmap sur `root`.
   - `limit` : nombre max de jobs (fichiers) à traiter.
   - `task` : l'instruction donnée à chaque agent (ex. « traduis le moduledoc »).
-  - Retourne `%{ok:, errors:, usage:, count:, files:}` où `count` = nb d'agents lancés.
+  - `mode: :loop` (défaut) : chaque agent fait son loop (read → LLM → write).
+  - `mode: :direct` : UN appel LLM par agent — le contenu est passé
+    directement (le Discover l'a déjà lu), le modèle traduit, le harness
+    écrit le résultat. ~3x moins de requêtes → plus rapide.
+  - Retourne `%{ok:, errors:, usage:, count:, files:, traces:}` où `count` = nb d'agents lancés.
   """
   def run(root, task, opts \\ []) do
     limit = Keyword.get(opts, :limit, 10)
+    mode = Keyword.get(opts, :mode, :loop)
     model = Keyword.get(opts, :model) || Elixness.LLM.default_model()
     system = Keyword.get(opts, :system) || Elixness.LLM.instruction()
 
@@ -36,7 +41,13 @@ defmodule Elixness.Flatmap do
         fn job ->
           # Chaque agent a son propre trace (observabilité par fichier).
           {:ok, trace} = Elixness.Trace.start_link()
-          r = Loop.run(auth, model, system, task_for(job, task), tools: Elixness.Tools.schemas(), trace: trace)
+
+          r =
+            case mode do
+              :direct -> run_direct(auth, model, system, task, job)
+              _ -> Loop.run(auth, model, system, task_for(job, task), tools: Elixness.Tools.schemas(), trace: trace)
+            end
+
           {r, Elixness.Trace.summary(trace)}
         end,
         max_concurrency: max(length(jobs), 1),
@@ -109,6 +120,44 @@ defmodule Elixness.Flatmap do
 
   defp task_for(job, task) do
     "#{task}\n\nFile: #{job.file}\nFrench content:\n#{job.text}"
+  end
+
+  # Mode :direct — UN appel LLM par agent. Le contenu est passé directement
+  # (le Discover l'a déjà lu), le modèle traduit, le harness écrit le résultat
+  # dans le fichier. ~3x moins de requêtes que le mode :loop.
+  defp run_direct(auth, model, system, task, job) do
+    prompt =
+      "#{task}\n\nFile: #{job.file}\nFrench content:\n#{job.text}\n\n" <>
+        "Return ONLY the translated docstring/content in English, with no preamble. " <>
+        "Keep structure, code blocks, backticks, identifiers intact."
+
+    messages = [
+      %{role: "system", content: system},
+      %{role: "user", content: prompt}
+    ]
+
+    case Elixness.LLM.chat(auth, model, messages, tools: []) do
+      {:ok, %{content: content, usage: usage}} when content != "" ->
+        # Le harness écrit mécaniquement le résultat dans le fichier.
+        write_translation(job.file, content)
+        {:ok, content, %{usage: usage}}
+
+      {:ok, %{content: _content, usage: _usage}} ->
+        {:error, "réponse vide pour #{job.file}"}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Écrit la traduction dans le fichier. Pour un POC, on remplace le
+  # @moduledoc par la traduction (le cas le plus simple et comparable à C).
+  # Note : pour une vraie implémentation, on patcherait précisément le
+  # moduledoc dans l'AST — ici on écrit un fichier .en à côté (sans détruire
+  # le source), ce qui est sûr et comparable.
+  defp write_translation(file, content) do
+    out = file <> ".en.txt"
+    File.write!(out, content)
   end
 
   # Les fichiers modifiés par le flatmap (git diff --name-only) — le pattern
