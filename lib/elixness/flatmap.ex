@@ -85,10 +85,11 @@ defmodule Elixness.Flatmap do
     # Compact : les fichiers traités + un extrait court de chaque résultat.
     lines =
       lines ++
-        Enum.zip(files, oks)
-        |> Enum.map(fn {file, content} ->
-          "  ✓ #{Path.basename(file)}: #{String.slice(content, 0, 100)}"
-        end)
+        (files
+         |> Enum.zip(oks)
+         |> Enum.map(fn {file, content} ->
+           "  ✓ #{Path.basename(file)}: #{String.slice(content, 0, 100)}"
+         end))
 
     lines =
       lines ++
