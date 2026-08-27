@@ -226,42 +226,28 @@ defmodule Elixness.Tools do
     %{} = decoded = Jason.decode!(args)
     pattern = Map.get(decoded, "pattern") || "."
     path = Map.get(decoded, "path", ".")
+    include = Map.get(decoded, "include")
+    limit = Map.get(decoded, "limit", 100)
 
-    # Le modèle peut donner une regex OU une simple chaîne (ex. "." pour tout,
-    # ou "moduledoc" pour chercher le mot). On compile en regex si possible,
-    # sinon on retombe sur une recherche de sous-chaîne.
-    regex =
-      try do
-        Regex.compile!(pattern)
-      rescue
-        _ -> nil
-      end
+    # Moteur ripgrep (pattern opencode) : rapide, respecte .gitignore, saute
+    # les binaires. Format de sortie groupé par fichier, truncation à `limit`.
+    args =
+      ["--line-number", "--no-heading", "-m", Integer.to_string(limit), pattern, path] ++
+        if(include, do: ["-g", include], else: [])
 
-    results =
-      path
-      |> Path.join("**/*.{ex,exs}")
-      |> Path.wildcard()
-      |> Enum.flat_map(fn f ->
-        case File.read(f) do
-          {:ok, content} ->
-            content
-            |> String.split("\n")
-            |> Enum.with_index(1)
-            |> Enum.filter(fn {line, _} ->
-              if regex, do: Regex.match?(regex, line), else: String.contains?(line, pattern)
-            end)
-            |> Enum.map(fn {line, n} -> "#{f}:#{n}: #{String.trim(line)}" end)
+    case System.cmd("rg", args, stderr_to_stdout: true) do
+      {out, 0} ->
+        format_rg_results(out, limit)
 
-          {:error, _} ->
-            []
+      {out, 1} ->
+        if String.contains?(out, "error") do
+          "ERROR: rg #{String.trim(out)}"
+        else
+          "No matches for #{pattern} in #{path}"
         end
-      end)
-      |> Enum.take(20)
 
-    if results == [] do
-      "No matches for #{pattern} in #{path}"
-    else
-      Enum.join(results, "\n")
+      {out, code} ->
+        "ERROR: rg exit #{code}: #{String.slice(out, 0, 200)}"
     end
   end
 
@@ -359,6 +345,52 @@ defmodule Elixness.Tools do
   end
 
   def execute(%{name: name}), do: "ERROR: unknown tool #{name}"
+
+  # Formate la sortie rg comme opencode : "Found N matches" + groupé par fichier.
+  defp format_rg_results(out, limit) do
+    lines = out |> String.split("\n", trim: true)
+
+    # Les lignes rg : "path:line:text" — on groupe par fichier.
+    rows =
+      lines
+      |> Enum.map(fn line ->
+        case String.split(line, ":", parts: 3) do
+          [file, line_no, text] -> {file, line_no, String.trim(text)}
+          _ -> nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    total = length(rows)
+    has_more = total >= limit
+    output = ["Found #{total} matches#{if has_more, do: " (more matches available)"}"]
+
+    {_current, output} =
+      Enum.reduce(rows, {"", output}, fn {file, line_no, text}, {cur, acc} ->
+        acc =
+          if file != cur and cur != "" do
+            acc ++ [""]
+          else
+            acc
+          end
+
+        acc =
+          if file != cur do
+            acc ++ ["#{file}:"] ++ ["  Line #{line_no}: #{text}"]
+          else
+            acc ++ ["  Line #{line_no}: #{text}"]
+          end
+
+        {file, acc}
+      end)
+
+    if has_more do
+      output ++ ["", "(Results truncated. Consider using a more specific path or pattern.)"]
+    else
+      output
+    end
+    |> Enum.join("\n")
+  end
 
   # Parse les résultats de DuckDuckGo HTML (liens .result__a).
   defp parse_ddg_results(body) do
