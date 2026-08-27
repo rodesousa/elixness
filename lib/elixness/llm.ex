@@ -79,39 +79,132 @@ defmodule Elixness.LLM do
   """
   def chat(%{token: token, base_url: base_url}, model, messages, opts \\ []) do
     tools = Keyword.get(opts, :tools, [])
+    # Streaming SSE (pattern des 3 harness) : on reçoit les tokens au fur et
+    # à mesure. `emit` (optionnel) : pid qui reçoit {:token, texte} en direct.
+    emit = Keyword.get(opts, :emit)
 
-    body = %{model: model, messages: messages}
+    body = %{model: model, messages: messages, stream: true}
     body = if tools != [], do: Map.put(body, "tools", tools), else: body
 
     case Req.post(base_url <> "/chat/completions",
            json: body,
            headers: [{"authorization", "Bearer " <> token}],
-           receive_timeout: 120_000
+           receive_timeout: 300_000,
+           into: fn {:data, data}, acc -> collect_sse(data, acc, emit) end
          ) do
-      {:ok, %Req.Response{status: 200, body: resp}} ->
-        case get_in(resp, ["choices", Access.at(0)]) do
-          nil ->
-            {:error, {:empty_response, resp}}
-
-          %{"message" => msg} ->
-            usage = normalize_usage(resp["usage"] || %{})
-            reasoning = msg["reasoning"] || ""
-
-            {:ok,
-             %{
-               content: msg["content"] || "",
-               tool_calls: parse_tool_calls(msg["tool_calls"]),
-               finish_reason: get_in(resp, ["choices", Access.at(0), "finish_reason"]),
-               usage: usage,
-               reasoning: reasoning
-             }}
-        end
+      {:ok, %Req.Response{status: 200, body: acc}} ->
+        # `acc` est le résultat du `into` : les deltas accumulés.
+        assemble_stream(acc, emit)
 
       {:ok, %Req.Response{status: status, body: body}} ->
         {:error, {:http, status, body}}
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  ## Streaming SSE
+
+  # Accumule les deltas SSE. Chaque `data:` est un JSON chat.completion.chunk.
+  defp collect_sse(data, acc, emit) do
+    acc = acc || %{content: [], tool_calls: %{}, order: [], usage: nil, finish: nil, reasoning: []}
+
+    # Ne traite que les lignes `data:` (les `data: [DONE]` sont ignorées).
+    data
+    |> String.split("\n")
+    |> Enum.each(fn line ->
+      case line do
+        "data: " <> payload ->
+          if payload != "[DONE]" do
+            case Jason.decode(payload) do
+              {:ok, chunk} -> apply_chunk(chunk, acc, emit)
+              _ -> :ok
+            end
+          end
+
+        _ ->
+          :ok
+      end
+    end)
+
+    acc
+  end
+
+  defp apply_chunk(chunk, acc, emit) do
+    # Usage dans le dernier chunk
+    acc = if chunk["usage"], do: %{acc | usage: chunk["usage"]}, else: acc
+
+    case get_in(chunk, ["choices", Access.at(0)]) do
+      nil ->
+        acc
+
+      choice ->
+        acc = if choice["finish_reason"], do: %{acc | finish: choice["finish_reason"]}, else: acc
+
+        delta = choice["delta"] || %{}
+
+        # Contenu
+        acc =
+          if content = delta["content"] do
+            if emit, do: send(emit, {:token, content})
+            %{acc | content: [content | acc.content]}
+          else
+            acc
+          end
+
+        # Reasoning (DeepSeek)
+        acc =
+          if reasoning = delta["reasoning"] do
+            %{acc | reasoning: [reasoning | acc.reasoning]}
+          else
+            acc
+          end
+
+        # Tool calls (indexés par leur id/index)
+        acc =
+          Enum.reduce(delta["tool_calls"] || [], acc, fn tc, acc ->
+            idx = tc["index"] || 0
+            id = tc["id"] || "call_#{idx}"
+            current = Map.get(acc.tool_calls, idx, %{id: id, name: "", arguments: ""})
+            name = current.name <> (get_in(tc, ["function", "name"]) || "")
+            args = current.arguments <> (get_in(tc, ["function", "arguments"]) || "")
+            acc = %{acc | tool_calls: Map.put(acc.tool_calls, idx, %{current | name: name, arguments: args})}
+
+            if not Enum.member?(acc.order, idx), do: %{acc | order: acc.order ++ [idx]}, else: acc
+          end)
+
+        acc
+    end
+  end
+
+  # Assemble le résultat final depuis les deltas accumulés.
+  defp assemble_stream(acc, _emit) do
+    if acc == nil or acc.content == [] and acc.tool_calls == %{} do
+      {:error, {:empty_stream, acc}}
+    else
+      tool_calls =
+        acc.order
+        |> Enum.map(fn idx -> Map.get(acc.tool_calls, idx) end)
+        |> Enum.reject(&is_nil/1)
+        |> Enum.map(fn tc ->
+          %{
+            id: tc.id,
+            name: tc.name,
+            arguments: tc.arguments
+          }
+        end)
+
+      usage = normalize_usage(acc.usage || %{})
+
+      {:ok,
+       %{
+         content: acc.content |> Enum.reverse() |> Enum.join(""),
+         tool_calls: parse_tool_calls(tool_calls),
+         finish_reason: acc.finish,
+         usage: usage,
+         reasoning: acc.reasoning |> Enum.reverse() |> Enum.join("")
+       }}
     end
   end
 

@@ -112,6 +112,7 @@ defmodule Elixness.Chat do
   end
 
   # Affiche les tool_calls en direct : "[tool] name args → result (durée)"
+  # et les tokens LLM (streaming) : "texte" au fur et à mesure.
   defp stream_tools do
     receive do
       {:tool_start, name, args} ->
@@ -120,6 +121,10 @@ defmodule Elixness.Chat do
 
       {:tool_end, name, result, duration} ->
         IO.puts("  ✓ #{name} → #{result} (#{duration}ms)")
+        stream_tools()
+
+      {:token, text} ->
+        IO.write(text)
         stream_tools()
 
       :stop ->

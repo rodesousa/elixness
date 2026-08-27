@@ -72,11 +72,11 @@ defmodule Elixness.Loop do
 
   ## Boucle
 
-  defp loop(messages, llm, model, _tools, iter, acc, _inbox, _trace, _emit) when iter >= @max_iterations do
+  defp loop(messages, llm, model, _tools, iter, acc, _inbox, _trace, emit) when iter >= @max_iterations do
     # MAX_STEPS_PROMPT (opencode) : au lieu d'échouer sec, on force le
     # modèle à résumer et arrêter. Tools non fournis → il ne peut que
     # répondre en texte.
-    case Elixness.LLM.chat(llm, model, messages ++ [%{role: "user", content: @max_steps_prompt}]) do
+    case Elixness.LLM.chat(llm, model, messages ++ [%{role: "user", content: @max_steps_prompt}], emit: emit) do
       {:ok, %{content: content, usage: usage}} ->
         {:ok, content, %{usage: sum_usage(acc, usage), turns: iter + 1}}
 
@@ -89,7 +89,7 @@ defmodule Elixness.Loop do
     # Drain l'inbox : les messages en attente sont ajoutés à la conversation.
     messages = drain_inbox(messages, inbox)
 
-    case Elixness.LLM.chat(llm, model, messages, tools: tools) do
+    case Elixness.LLM.chat(llm, model, messages, tools: tools, emit: emit) do
       {:ok, %{content: content, tool_calls: calls, finish_reason: finish} = resp} ->
         # opencode : ne sort que si finish ≠ "tool_calls" ET pas de calls en attente
         if calls == [] and finish != "tool_calls" do
