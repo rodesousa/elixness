@@ -17,8 +17,9 @@ defmodule Elixness.Explore do
   alias Elixness.{Auth, LLM}
 
   # Garde-fou budget : on ne lance JAMAIS 1 agent LLM par fichier si la liste
-  # pertinente est énorme — le coût exploserait. Au-delà de ce seuil on coupe
-  # (le modèle peut passer un limit explicite pour borner davantage).
+  # pertinente est énorme — le coût en tokens exploserait. Au-delà de ce seuil
+  # on coupe (le modèle peut passer un limit explicite pour borner davantage,
+  # ou réduire le périmètre d'abord).
   @max_analyze 200
 
   @doc """

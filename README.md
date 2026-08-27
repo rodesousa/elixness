@@ -578,19 +578,31 @@ sources de stockage, config.yaml `skills:`, ESSENTIAL_SKILLS, index prompt).
 
 | | Hermes (subagent) | elixness (chat) |
 |---|---|---|
-| api_calls / tool_calls | 26 | **17** ✅ |
-| prompt | (non rapporté) | 153k |
-| completion | (non rapporté) | 4k |
-| coût | (non rapporté) | **0.00045 $** |
-| temps | 196s | **~90s** ✅ |
+| api_calls / tool_calls | 26 | **11** ✅ |
+| prompt (input) | 60.5k + cache_read 1149k | 473k |
+| completion | 10.4k | 3k |
+| coût | ~0.019 $ | **0.0003 $** (63x moins cher) ✅ |
+| temps | 196s | **~135s** ✅ |
+| fichiers explorés | — | 200 (72 OK, garde-fou) |
 | limite de pas atteinte | oui | oui |
 | qualité | équivalente | équivalente |
 
-Note : l'agent elixness a utilisé `explore_repo` (analyse des fichiers via rg
-→ agents → reduce) + 17 lectures ciblées (glob ×3, read_file ×9, search_files
-×4). Il a atteint MAX_STEPS (8 turns) mais a quand même produit une synthèse
-complète. Les métriques de cost/tokens de l'agent Hermes ne sont pas rapportées
-par le subagent — comparer sur les axes disponibles (api_calls, temps, qualité).
+Note : les métriques Hermes viennent de la table `session_model_usage`
+(état.db, session `20260827_182942_298310`, le subagent skills) : 26 api_calls,
+input 60.5k + **1149k cache-read** (le cache neutralise le system prompt
+partagé), output 10.4k, ~0.019 $. elixness a utilisé `explore_repo` (analyse
+des fichiers via rg → agents → reduce) + lectures ciblées. Avec le garde-fou
+budget (ab78e23), explore_repo a analysé 200 fichiers (72 OK) au lieu de tout
+le repo. Il a atteint MAX_STEPS (8 turns) mais a quand même produit une
+synthèse complète.
+Runs précédents (même question) : sans garde-fou, explore_repo borné à 10
+fichiers → 17 tool_calls, cost 0.00045 $, ~90s. Avec garde-fou 200 → 11
+tool_calls, cost 0.0003 $, ~135s (plus de fichiers analysés donc plus lent,
+mais résultat plus riche et moins de tool_calls de rattrapage).
+**Lecture du cost élevé en tokens d'elixness (473k input)** : c'est le prix
+du « 1 agent par fichier avec contenu » de explore_repo (200 fichiers ×
+contenu). Mais le coût en $ reste ~60x moins cher que Hermes grâce à
+deepseek-v4-flash — le token n'est pas le bon comparateur, le $ oui.
 
 **Leçon des 3 harness (deepseek/opencode/Hermes, analysés 2026-08-27)** : aucun
 ne pré-filtre les fichiers par pertinence, aucun n'a de map-reduce hiérarchique
