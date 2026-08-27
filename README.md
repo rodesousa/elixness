@@ -590,11 +590,9 @@ sources de stockage, config.yaml `skills:`, ESSENTIAL_SKILLS, index prompt).
 Note : les métriques Hermes viennent de la table `session_model_usage`
 (état.db, session `20260827_182942_298310`, le subagent skills) : 26 api_calls,
 input 60.5k + **1149k cache-read** (le cache neutralise le system prompt
-partagé), output 10.4k, ~0.019 $. elixness a utilisé `explore_repo` (analyse
-des fichiers via rg → agents → reduce) + lectures ciblées. Avec le garde-fou
-budget (ab78e23), explore_repo a analysé 200 fichiers (72 OK) au lieu de tout
-le repo. Il a atteint MAX_STEPS (8 turns) mais a quand même produit une
-synthèse complète.
+partagé — un avantage QUE Hermes a déjà, et malgré ça il coûte 63x plus cher),
+output 10.4k, ~0.019 $. elixness n'a PAS de cache-read (473k de prompt neuf) :
+la différence de coût vient du prix du modèle deepseek-v4-flash, pas du cache.
 Runs précédents (même question) : sans garde-fou, explore_repo borné à 10
 fichiers → 17 tool_calls, cost 0.00045 $, ~90s. Avec garde-fou 200 → 11
 tool_calls, cost 0.0003 $, ~135s (plus de fichiers analysés donc plus lent,
