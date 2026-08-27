@@ -569,6 +569,32 @@ le raw. Elixness a adopté les deux (sanitize U+FFFD + rescue dans
 elixness **bat Hermes** sur l'exploration de repo (explore_repo : rg → flatmap
 → reduce). À re-confirmer avec le read borné (09bf92e).
 
+### Test 3b — « Comment les skills de Hermes sont configurés ? » (même repo)
+
+Même question posée aux 2 moteurs dans `~/git/hermes-agent` : un chat elixness
+(explore_repo + lecture ciblée) vs un agent Hermes (subagent). Les 2 ont
+produit une réponse structurellement équivalente (format SKILL.md + frontmatter,
+sources de stockage, config.yaml `skills:`, ESSENTIAL_SKILLS, index prompt).
+
+| | Hermes (subagent) | elixness (chat) |
+|---|---|---|
+| api_calls / tool_calls | 26 | **17** ✅ |
+| prompt | (non rapporté) | 153k |
+| completion | (non rapporté) | 4k |
+| coût | (non rapporté) | **0.00045 $** |
+| temps | 196s | **~90s** ✅ |
+| limite de pas atteinte | oui | oui |
+| qualité | équivalente | équivalente |
+
+Note : l'agent elixness a utilisé `explore_repo` (analyse des fichiers via rg
+→ agents → reduce) + 17 lectures ciblées (glob ×3, read_file ×9, search_files
+×4). Il a atteint MAX_STEPS (8 turns) mais a quand même produit une synthèse
+complète. Les métriques de cost/tokens de l'agent Hermes ne sont pas rapportées
+par le subagent — comparer sur les axes disponibles (api_calls, temps, qualité).
+À l'époque de ce test, `explore_repo` était borné à 10 fichiers (défaut) — le
+fix `eb5127a` le rend illimité (`:all`), le run devrait couvrir tout le repo.
+Re-test à faire pour confirmer.
+
 ## Notes
 
 - Le token est lu brut depuis auth.json : s'il est expiré, l'API répond 401 et
