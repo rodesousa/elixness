@@ -108,7 +108,7 @@ defmodule Elixness.Tools do
             "properties" => %{
               "task" => %{"type" => "string", "description" => "The task for each agent, e.g. translate the French docstrings to English"},
               "path" => %{"type" => "string", "description" => "Directory to scan (default: cwd)"},
-              "limit" => %{"type" => "integer", "description" => "Max files to process (default 10)"}
+              "limit" => %{"type" => "integer", "description" => "Max files to process (default: all found)"}
             },
             "required" => ["task"]
           }

@@ -25,14 +25,16 @@ defmodule Elixness.Flatmap do
   - Retourne `%{ok:, errors:, usage:, count:, files:, traces:}` où `count` = nb d'agents lancés.
   """
   def run(root, task, opts \\ []) do
-    limit = Keyword.get(opts, :limit, 10)
+    # Pas de plafond par défaut : le flatmap traite TOUS les fichiers
+    # découverts (l'utilisateur peut préciser limit pour borner).
+    limit = Keyword.get(opts, :limit, :all)
     mode = Keyword.get(opts, :mode, :loop)
     model = Keyword.get(opts, :model) || Elixness.LLM.default_model()
     system = Keyword.get(opts, :system) || Elixness.LLM.instruction()
 
     {:ok, auth} = Auth.load()
 
-    jobs = Discover.scan(root, limit: limit)
+    jobs = Discover.scan(root, limit: if(limit == :all, do: 10_000, else: limit))
 
     # spawn UN agent par fichier (le flatmap) — parallèle, éphémère.
     results =
