@@ -115,7 +115,8 @@ defmodule Elixness.Chat do
   # et les tokens LLM (streaming) : "texte" au fur et à mesure.
   # `safe_io` : les args/result viennent du LLM et peuvent contenir des
   # octets UTF-8 invalides (ex. pattern search_files avec accents) qui font
-  # crasher :io.put_chars sur :standard_io — on sanitize avant d'écrire.
+  # crasher :io.put_chars sur :standard_io — on sanitize avant d'écrire, ET
+  # on rescue (le pattern Hermes) : l'affichage ne doit JAMAIS tuer le chat.
   defp stream_tools do
     receive do
       {:tool_start, name, args} ->
@@ -145,6 +146,10 @@ defmodule Elixness.Chat do
       :write -> IO.write(safe)
       :puts -> IO.puts(safe)
     end
+  rescue
+    # Filet de sécurité (pattern Hermes _cprint) : un octet qui échapperait
+    # à la sanitisation ne doit pas tuer le streamer ni le chat.
+    _ -> :ok
   end
 
   # Remplace les octets invalides par U+FFFD (même helper que Tools).

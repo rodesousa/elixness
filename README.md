@@ -535,6 +535,18 @@ crash, **cost réel affiché (0.00665 $)**. Le modèle a relancé flatmap avec
 `limit: 30` pour couvrir les 29 fichiers (le défaut du tool est 10) →
 29/29 OK, 9 fichiers modifiés, 0 commentaire FR restant (grep accentué),
 compile OK. Cost 0.00665 $ pour 29 fichiers vs C ≈ 0.0168 $ pour 10.
+**Comparé aux 2 autres harness (protection UTF-8)** : deepseek-harness est
+web-first (pas d'`IO.puts`) — protection à l'entrée : `TextDecoderStream()`
+non-fatal (sse.ts:32) → U+FFFD, `TextRetainer` (bornes UTF-8 sûres),
+`parseArguments` défensif, lecture `fatal:true` + erreur `FS_NOT_TEXT`
+(fsio.ts:331). Hermes (Python) : **triple filet** — `try/except` autour de
+chaque écriture terminal (`_cprint` cli.py:3672, « display must never abort
+a turn »), previews tronquées/redactées des args (jamais le raw stream),
+`_sanitize_surrogates` → U+FFFD à la persistance. **La leçon** : ce n'est
+pas la sanitisation seule qui sauve — c'est le `rescue` autour de l'écriture
+(ne jamais tuer le process pour un problème d'affichage) + ne pas refléter
+le raw. Elixness a adopté les deux (sanitize U+FFFD + rescue dans
+`stream_tools`).
 
 ### Test 2 — Recherche sur internet (web_search + résumé 3 sources)
 
