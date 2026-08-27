@@ -507,11 +507,17 @@ Chaque évolution est comparée à C sur les 4 axes (coût, temps, qualité, tra
 | avant compact | 807k | 1 | 5 fichiers |
 | streaming (6d4de16) | 428k | 1 | 7 fichiers |
 | read borné (09bf92e) | 1.4M | 2 (re-lancé) | 8 fichiers ❌ |
-| **sans plafond (7b3ddaf)** | **463k** | **1 seul** | 10 fichiers traités, 4 traduits, `mix compile` OK ✅ |
+| sans plafond (7b3ddaf) | 463k | 1 seul | 10 fichiers, 4 traduits |
+| **nettoyé (ec2e47b)** | **390k** | **1 seul** | **10 fichiers, agent_task.ex traduit, git diff OK** ✅ |
 
 Le retrait du plafond de 10 agents (commit 7b3ddaf) a éliminé le re-flatmap :
 `flatmap: 1` (traite tous les fichiers FR), vérification par `git diff` +
 `mix compile` (le pattern opencode/Hermes). Prompt 1.4M → 463k.
+**Le nettoyage (ec2e47b)** : retrait du code spécifique traduction (batch
+translate, extraction moduledoc AST, filtre FR) → Discover générique (liste
+les fichiers). **390k prompt (meilleur score), comportement propre** (flatmap
+→ git → réponse, 0 read_file/search inutiles). Le code custom des moduledoc
+faisait partie du problème.
 Reste : le mode `:direct` réparé (écrire dans le source) pour vraiment
 battre C sur le coût (C ≈ 0.0168 $, ~42s).
 
