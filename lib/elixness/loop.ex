@@ -247,7 +247,7 @@ defmodule Elixness.Loop do
 
   defp zero_usage do
     %{"prompt_tokens" => 0, "completion_tokens" => 0, "total_tokens" => 0,
-      "reasoning_tokens" => 0, "cost" => 0.0}
+      "reasoning_tokens" => 0, "cache_read_tokens" => 0, "cost" => 0.0}
   end
 
   defp sum_usage(acc, usage) do
@@ -256,6 +256,7 @@ defmodule Elixness.Loop do
       "completion_tokens" => (acc["completion_tokens"] || 0) + (usage["completion_tokens"] || 0),
       "total_tokens" => (acc["total_tokens"] || 0) + (usage["total_tokens"] || 0),
       "reasoning_tokens" => (acc["reasoning_tokens"] || 0) + (usage["reasoning_tokens"] || 0),
+      "cache_read_tokens" => (acc["cache_read_tokens"] || 0) + (usage["cache_read_tokens"] || 0),
       "cost" => (acc["cost"] || 0.0) + (usage["cost"] || 0.0)
     }
   end

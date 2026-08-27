@@ -102,7 +102,7 @@ defmodule Elixness.Chat do
            emit: streamer) do
       {:ok, content, %{usage: usage}} ->
         conversation = conversation ++ [%{role: "assistant", content: content}]
-        IO.puts("  (usage: prompt=#{usage["prompt_tokens"]} completion=#{usage["completion_tokens"]} cost=#{format_cost(usage["cost"])})")
+        IO.puts("  (usage: prompt=#{usage["prompt_tokens"]} completion=#{usage["completion_tokens"]} cache_read=#{usage["cache_read_tokens"]} cost=#{format_cost(usage["cost"])})")
         IO.puts(Elixness.Trace.render_summary(trace))
         {:ok, content, conversation}
 

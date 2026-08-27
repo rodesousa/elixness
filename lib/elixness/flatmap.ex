@@ -168,7 +168,7 @@ defmodule Elixness.Flatmap do
 
   defp zero_usage do
     %{"prompt_tokens" => 0, "completion_tokens" => 0, "total_tokens" => 0,
-      "reasoning_tokens" => 0, "cost" => 0.0}
+      "reasoning_tokens" => 0, "cache_read_tokens" => 0, "cost" => 0.0}
   end
 
   defp sum_usage(a, b) do
@@ -177,6 +177,7 @@ defmodule Elixness.Flatmap do
       "completion_tokens" => (a["completion_tokens"] || 0) + (b["completion_tokens"] || 0),
       "total_tokens" => (a["total_tokens"] || 0) + (b["total_tokens"] || 0),
       "reasoning_tokens" => (a["reasoning_tokens"] || 0) + (b["reasoning_tokens"] || 0),
+      "cache_read_tokens" => (a["cache_read_tokens"] || 0) + (b["cache_read_tokens"] || 0),
       "cost" => (a["cost"] || 0.0) + (b["cost"] || 0.0)
     }
   end

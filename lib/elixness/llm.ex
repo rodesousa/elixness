@@ -243,8 +243,19 @@ defmodule Elixness.LLM do
   defp normalize_usage(usage) do
     reasoning_tokens = get_in(usage, ["completion_tokens_details", "reasoning_tokens"]) || 0
 
+    # Cache-read (pattern des 3 harness) : le provider DeepSeek fait du prefix
+    # caching AUTOMATIQUE (aucun marqueur à envoyer) — on mesure les tokens
+    # relus en cache pour comptabiliser le vrai coût. Deux conventions wire :
+    # `prompt_tokens_details.cached_tokens` (OpenAI) ou `prompt_cache_hit_tokens`
+    # (natif DeepSeek).
+    cache_read =
+      get_in(usage, ["prompt_tokens_details", "cached_tokens"]) ||
+        usage["prompt_cache_hit_tokens"] ||
+        0
+
     usage
     |> Map.put("reasoning_tokens", reasoning_tokens)
+    |> Map.put("cache_read_tokens", cache_read)
     |> Map.put("cost", usage["cost"])
   end
 end
