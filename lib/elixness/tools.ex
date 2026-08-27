@@ -425,7 +425,10 @@ defmodule Elixness.Tools do
             "cost=#{result.usage["cost"]}"
         ]
 
-    Enum.join(lines, "\n") <> "\n\n" <> result.summary
+    # Retourne le TUPLE {:result, texte, usage} (comme flatmap) pour que le
+    # loop agrège le coût des agents internes au parent — sinon la conso de
+    # l'explore_repo est invisible dans le usage final du chat.
+    {:result, Enum.join(lines, "\n") <> "\n\n" <> result.summary, result.usage}
   end
 
   def execute(%{name: name}), do: "ERROR: unknown tool #{name}"
