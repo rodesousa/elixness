@@ -509,6 +509,7 @@ Chaque évolution est comparée à C sur les 4 axes (coût, temps, qualité, tra
 | read borné (09bf92e) | 1.4M | 2 (re-lancé) | 8 fichiers ❌ |
 | sans plafond (7b3ddaf) | 463k | 1 seul | 10 fichiers, 4 traduits |
 | **nettoyé (ec2e47b)** | **390k** | **1 seul** | **10 fichiers, agent_task.ex traduit, git diff OK** ✅ |
+| streaming fix (0cf508f) | 431k | 1 seul | 10 fichiers, 2 modifiés (agent_task.ex + datation.ex), 8 déjà EN, git diff + mix compile OK ✅ |
 
 Le retrait du plafond de 10 agents (commit 7b3ddaf) a éliminé le re-flatmap :
 `flatmap: 1` (traite tous les fichiers FR), vérification par `git diff` +
@@ -520,6 +521,11 @@ les fichiers). **390k prompt (meilleur score), comportement propre** (flatmap
 faisait partie du problème.
 Reste : le mode `:direct` réparé (écrire dans le source) pour vraiment
 battre C sur le coût (C ≈ 0.0168 $, ~42s).
+**Le fix streaming (0cf508f)** : la CaseClauseError de `LLM.chat` (contrat
+Req `into:` violé) a fait échouer tous les runs — corrigé en portant l'état
+SSE dans `response.private[:sse]`. Re-testé : 431k prompt, flatmap 1, 10
+agents, 0 erreur, 2 fichiers modifiés (agent_task.ex + datation.ex, les 8
+autres déjà EN), vérifié par git diff + mix compile.
 
 ### Test 2 — Recherche sur internet (web_search + résumé 3 sources)
 
