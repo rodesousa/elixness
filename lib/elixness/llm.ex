@@ -86,15 +86,29 @@ defmodule Elixness.LLM do
     body = %{model: model, messages: messages, stream: true}
     body = if tools != [], do: Map.put(body, "tools", tools), else: body
 
+    # `into:` (Req) : la fonction reçoit `{request, response}` comme
+    # accumulateur — on ne peut PAS retourner notre map seule (Req lève une
+    # CaseClauseError à la fin du stream). On stocke donc l'état SSE dans
+    # `response.private[:sse]` et on re-thread le tuple {request, response}.
+    into = fn
+      {:data, data}, {req, resp} when is_binary(data) ->
+        acc = Req.Response.get_private(resp, :sse) || new_acc()
+        acc = collect_sse(data, acc, emit)
+        {:cont, {req, Req.Response.put_private(resp, :sse, acc)}}
+
+      _other, {req, resp} ->
+        {:cont, {req, resp}}
+    end
+
     case Req.post(base_url <> "/chat/completions",
            json: body,
            headers: [{"authorization", "Bearer " <> token}],
            receive_timeout: 300_000,
-           into: fn {:data, data}, acc -> collect_sse(data, acc, emit) end
+           into: into
          ) do
-      {:ok, %Req.Response{status: 200, body: acc}} ->
-        # `acc` est le résultat du `into` : les deltas accumulés.
-        assemble_stream(acc, emit)
+      {:ok, %Req.Response{status: 200} = resp} ->
+        # L'état SSE accumulé pendant le stream est dans resp.private.
+        assemble_stream(Req.Response.get_private(resp, :sse), emit)
 
       {:ok, %Req.Response{status: status, body: body}} ->
         {:error, {:http, status, body}}
@@ -106,29 +120,47 @@ defmodule Elixness.LLM do
 
   ## Streaming SSE
 
+  defp new_acc do
+    %{content: [], tool_calls: %{}, order: [], usage: nil, finish: nil, reasoning: [], buffer: ""}
+  end
+
   # Accumule les deltas SSE. Chaque `data:` est un JSON chat.completion.chunk.
+  # `buffer` : garde la ligne incomplète entre deux chunks réseau (un
+  # événement `data:` peut être coupé en plein milieu par le découpage TCP).
   defp collect_sse(data, acc, emit) do
-    acc = acc || %{content: [], tool_calls: %{}, order: [], usage: nil, finish: nil, reasoning: []}
+    # Concatène le buffer résiduel + les nouvelles données, puis ne traite
+    # que les lignes complètes (terminées par \n). Le reste reste en buffer.
+    {lines, leftover} = split_lines(acc.buffer <> data)
 
-    # Ne traite que les lignes `data:` (les `data: [DONE]` sont ignorées).
-    data
-    |> String.split("\n")
-    |> Enum.each(fn line ->
-      case line do
-        "data: " <> payload ->
-          if payload != "[DONE]" do
-            case Jason.decode(payload) do
-              {:ok, chunk} -> apply_chunk(chunk, acc, emit)
-              _ -> :ok
+    acc =
+      Enum.reduce(lines, %{acc | buffer: leftover}, fn line, acc ->
+        case line do
+          "data: " <> payload ->
+            if payload != "[DONE]" do
+              case Jason.decode(payload) do
+                {:ok, chunk} -> apply_chunk(chunk, acc, emit)
+                _ -> acc
+              end
+            else
+              acc
             end
-          end
 
-        _ ->
-          :ok
-      end
-    end)
+          _ ->
+            acc
+        end
+      end)
 
     acc
+  end
+
+  # Sépare un buffer SSE en lignes complètes + le résidu incomplet.
+  # Ex: "a\nb\nc" → {["a", "b"], "c"} ; "a\nb\n" → {["a", "b"], ""}.
+  defp split_lines(bin) do
+    case :binary.split(bin, "\n", [:global]) do
+      parts ->
+        {complete, [last]} = Enum.split(parts, -1)
+        {complete, last}
+    end
   end
 
   defp apply_chunk(chunk, acc, emit) do
@@ -146,7 +178,7 @@ defmodule Elixness.LLM do
 
         # Contenu
         acc =
-          if content = delta["content"] do
+          if is_binary(content = delta["content"]) and content != "" do
             if emit, do: send(emit, {:token, content})
             %{acc | content: [content | acc.content]}
           else
@@ -155,7 +187,7 @@ defmodule Elixness.LLM do
 
         # Reasoning (DeepSeek)
         acc =
-          if reasoning = delta["reasoning"] do
+          if is_binary(reasoning = delta["reasoning"]) and reasoning != "" do
             %{acc | reasoning: [reasoning | acc.reasoning]}
           else
             acc
@@ -179,28 +211,26 @@ defmodule Elixness.LLM do
   end
 
   # Assemble le résultat final depuis les deltas accumulés.
+  defp assemble_stream(nil, _emit), do: {:error, {:empty_stream, nil}}
+
   defp assemble_stream(acc, _emit) do
-    if acc == nil or acc.content == [] and acc.tool_calls == %{} do
+    if acc.content == [] and acc.tool_calls == %{} do
       {:error, {:empty_stream, acc}}
     else
+      # Déjà sous la forme attendue par le loop : %{id, name, arguments}
+      # (atom keys) — PAS de re-parse via string keys (ça nillerait tout).
       tool_calls =
         acc.order
         |> Enum.map(fn idx -> Map.get(acc.tool_calls, idx) end)
         |> Enum.reject(&is_nil/1)
-        |> Enum.map(fn tc ->
-          %{
-            id: tc.id,
-            name: tc.name,
-            arguments: tc.arguments
-          }
-        end)
+        |> Enum.map(fn tc -> %{id: tc.id, name: tc.name, arguments: tc.arguments} end)
 
       usage = normalize_usage(acc.usage || %{})
 
       {:ok,
        %{
          content: acc.content |> Enum.reverse() |> Enum.join(""),
-         tool_calls: parse_tool_calls(tool_calls),
+         tool_calls: tool_calls,
          finish_reason: acc.finish,
          usage: usage,
          reasoning: acc.reasoning |> Enum.reverse() |> Enum.join("")
@@ -216,17 +246,5 @@ defmodule Elixness.LLM do
     usage
     |> Map.put("reasoning_tokens", reasoning_tokens)
     |> Map.put("cost", usage["cost"])
-  end
-
-  defp parse_tool_calls(nil), do: []
-
-  defp parse_tool_calls(tool_calls) do
-    Enum.map(tool_calls, fn tc ->
-      %{
-        id: tc["id"],
-        name: get_in(tc, ["function", "name"]),
-        arguments: get_in(tc, ["function", "arguments"]) || "{}"
-      }
-    end)
   end
 end
