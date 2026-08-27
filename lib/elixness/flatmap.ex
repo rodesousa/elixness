@@ -78,14 +78,16 @@ defmodule Elixness.Flatmap do
     }
   end
 
-  @doc "Résumé texte du flatmap (ce que le modèle voit)."
-  def summarize(%{ok: oks, errors: errs, usage: usage, count: count, traces: traces}) do
+  @doc "Résumé texte compact du flatmap (ce que le modèle voit)."
+  def summarize(%{ok: oks, errors: errs, usage: usage, count: count, files: files, traces: _traces}) do
     lines = ["FLATMAP RESULT: #{count} agents lancés (#{length(oks)} OK, #{length(errs)} erreurs)."]
 
+    # Compact : les fichiers traités + un extrait court de chaque résultat.
     lines =
       lines ++
-        Enum.map(oks, fn content ->
-          "  ✓ #{String.slice(content, 0, 200)}"
+        Enum.zip(files, oks)
+        |> Enum.map(fn {file, content} ->
+          "  ✓ #{Path.basename(file)}: #{String.slice(content, 0, 100)}"
         end)
 
     lines =
@@ -94,14 +96,7 @@ defmodule Elixness.Flatmap do
           "  ✗ #{inspect(err)}"
         end)
 
-    lines =
-      lines ++
-        Enum.map(traces, fn trace ->
-          "  [trace] " <> Elixness.Trace.render_summary(trace)
-        end)
-
-    # Le git diff mécanique (pattern opencode) : le harness montre ce qui a
-    # changé — le modèle n'a PAS à re-scanner pour vérifier.
+    # Le git diff mécanique (pattern opencode) : les fichiers modifiés.
     lines =
       lines ++
         ["", "CHANGED FILES (git diff --name-only):"] ++
