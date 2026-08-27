@@ -591,9 +591,19 @@ Note : l'agent elixness a utilisé `explore_repo` (analyse des fichiers via rg
 ×4). Il a atteint MAX_STEPS (8 turns) mais a quand même produit une synthèse
 complète. Les métriques de cost/tokens de l'agent Hermes ne sont pas rapportées
 par le subagent — comparer sur les axes disponibles (api_calls, temps, qualité).
-À l'époque de ce test, `explore_repo` était borné à 10 fichiers (défaut) — le
-fix `eb5127a` le rend illimité (`:all`), le run devrait couvrir tout le repo.
-Re-test à faire pour confirmer.
+
+**Leçon des 3 harness (deepseek/opencode/Hermes, analysés 2026-08-27)** : aucun
+ne pré-filtre les fichiers par pertinence, aucun n'a de map-reduce hiérarchique
+ni de scoring sémantique. La pertinence est décidée par le MODÈLE (via
+search_files/glob/read) ; le runtime ne fait que BORNER : caps par tool
+(grep/glob ≤100-250, read ≤2k lignes/50KB), concurrency (opencode unbounded,
+Hermes max_concurrent_children 10, deepseek maxConcurrentAgents/1000),
+profondeur de délégation (défaut 1), compaction/truncation du contexte.
+→ elixness a adopté la même philosophie (commits eb5127a, ab78e23) :
+`explore_repo`/`flatmap` sont illimités (tous les fichiers) mais gardent un
+garde-fou budget (`@max_analyze 200` : au-delà, on coupe — le modèle réduit le
+périmètre d'abord) + concurrency bornée (20, évite la saturation du pool Finch
+sur les gros repos).
 
 ## Notes
 
