@@ -63,12 +63,17 @@ tester le cas « résume ce sujet en cherchant 3 sources sur internet » — un
 2e benchmark vs C (Hermes fait déjà web_search + résumé).
 
 **Le but** :
-- Ajouter un tool `web_search` (+ `web_extract` ou lecture d'URL)
+- Ajouter un tool `web_search` (+ `web_extract` ou lecture d'URL) — ✅ FAIT
+  (DuckDuckGo HTML, testé)
+- **Passer web_search sur Exa MCP** (comme opencode) — gratuit 150 appels/jour
+  sans clé, ou $10/mois de crédits avec clé (~2800 recherches). Optimisé LLM
+  (context, livecrawl). Rendre elixness comparable à opencode/Hermes dans le
+  benchmark. DuckDuckGo reste un fallback.
 - Tester : « résume le sujet X en cherchant 3 sources »
 - Comparer elixness vs C sur les 4 axes (coût, temps, qualité, traçage)
 
 **Design envisagé** :
-- Simple d'abord : `web_search` + `web_extract` (le modèle cherche, lit, résume)
+- Simple d'abord : `web_search` + `web_extract` (le modèle cherche, lit, résume) — ✅ tools faits
 - Si le chat explore trop (comme avant) → `flatmap_web` mécanique (le harness
   cherche, spawn 1 agent/source, synthétise)
 - Le reduce (synthèse multi-sources) est un nouveau pattern à tester
@@ -77,6 +82,11 @@ tester le cas « résume ce sujet en cherchant 3 sources sur internet » — un
 (synthèse > traduction) et ajoute un vrai tool utile — elixness devient un
 agent complet. Test validé par l'utilisateur (2026-08-27) avant la bifurcation
 exploration de repo.
+
+**Exa (décision, 2026-08-27)** : MCP public `https://mcp.exa.ai/mcp` — gratuit
+sans clé (150 calls/jour, 3 QPS), ou clé API (20$ signup + 10$/mois, Search $7/1000
+req). Même provider qu'opencode → comparaison honnête. À brancher pour le test
+de recherche internet (DuckDuckGo = fallback).
 
 ## Après (backlog)
 
