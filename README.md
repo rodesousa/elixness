@@ -555,8 +555,28 @@ le raw. Elixness a adopté les deux (sanitize U+FFFD + rescue dans
 
 ### Test 2 — Recherche sur internet (web_search + résumé 3 sources)
 
-À faire : brancher Exa (priorité 3), tester « résume ce sujet en cherchant
-3 sources », comparer vs C.
+Sujet : « DeepSeek V4 Flash : performances et usages » — chercher 3+ sources
+et résumer. Réalisé le 2026-08-27 (DuckDuckGo, pas encore Exa).
+
+| | Hermes (subagent) | elixness (chat) |
+|---|---|---|
+| api_calls / tool_calls | 3 | **5** (2 web_search + 3 web_extract) |
+| prompt (input) | 24.4k + cache 42.5k | **14.7k** + cache 6.7k ✅ |
+| completion | 1.5k | 2.1k |
+| coût | ~0.0022 $ | **0.00015 $** (~15x moins cher) ✅ |
+| temps | 44.6s | **~6s exec** ✅ |
+| sources | 4 (DeepInfra, Lightning AI, Morph, LLM-Stats) | 3 (DataCamp, ZenMux, AI Stupid Level) |
+| qualité | équivalente | équivalente |
+
+Note : métriques Hermes depuis `session_model_usage` (session
+`20260827_193830_76360d`, le subagent web) : 3 api_calls, input 24.4k + 42.5k
+cache, output 1.5k, ~0.0022 $. elixness : prompt 14.7k + 6.7k cache, output
+2.1k, 0.00015 $, 5 tool_calls (~6s exec). Les 2 ont produit un résumé
+structuré de qualité équivalente (présentation, benchmarks SWE-bench 79% /
+GPQA 88%, prix, usages, points forts/faibles) avec 3-4 sources citées.
+elixness est ~15x moins cher et plus rapide — le web_search/web_extract
+(DuckDuckGo) suffit pour ce cas, Exa (MCP) à brancher pour aller plus loin
+(priorité 3 roadmap).
 
 ### Test 3 — Explorer un repo (ex. « quels sont les tools d'opencode ? »)
 
