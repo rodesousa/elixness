@@ -28,23 +28,33 @@ harness : le modèle demande, le harness orchestre.
 - Le tool `flatmap` dans Tools (schema + executor avec état)
 - Le résultat retourne le total (traductions + usage agrégé)
 
-## 2. Les logs des tools traçables
+## 2. Les logs des tools traçables — affichage EN DIRECT (streaming)
 
 **Problème observé** : aujourd'hui les tool_calls s'exécutent mais on ne voit
-rien en cours de route — le chat n'affiche que la réponse finale. On veut la
-**traçabilité** (le flamegraph de context-engineering appliqué aux tools).
+**rien en cours de route** — le chat n'affiche que la réponse finale (et le
+trace seulement APRÈS). On veut la **traçabilité** (le flamegraph de
+context-engineering appliqué aux tools) et surtout **l'affichage en direct** :
+comme opencode/Hermes, on voit chaque tool call apparaître au fur et à mesure.
 
-**Le but** : pouvoir voir à tout moment ce que fait un agent :
-- quels tools il appelle, avec quels arguments
-- les résultats (succès/erreur, taille)
+**Le but** : voir à tout moment ce que fait un agent, EN TEMPS RÉEL :
+- quels tools il appelle, avec quels arguments (affiché dès le lancement)
+- les résultats (succès/erreur, taille) (affiché dès la fin du tool)
 - le temps, les tokens par tool
 - l'état des enfants (ChildRegistry : combien d'actifs, leurs pids)
+- un `spinner`/indicateur pendant l'exécution (le modèle « travaille »)
 
 **Implémentation envisagée** :
-- Chaque `execute` de tool → journalise (time, call, args, result, duration)
+- Chaque `execute` de tool → journalise + **émet un événement** (broadcast)
 - Un `Elixness.Trace` (Agent/ETS) : la trace des derniers événements
-- Affichage dans le chat (un paneau trace) + commande `/trace`
+- **Le chat AFFICHE les événements en direct** (le loop pousse les events au
+  CLI qui les imprime, sans attendre la réponse finale)
+- Commande `/trace` pour l'historique
 - Logs des enfants dans ChildRegistry
+
+**Pourquoi c'est important** : le test benchmark elixness vs Hermes a montré
+que l'agent elixness explore sans rien afficher en direct (le log reste à 12
+lignes pendant qu'il travaille) — impossible de savoir ce qu'il fait. L'affichage
+en direct est LA différence UX avec opencode/Hermes qui streament les tool calls.
 
 ## Après (backlog)
 
