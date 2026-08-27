@@ -19,6 +19,7 @@ defmodule Elixness.Tools do
   def execution_mode("write_file"), do: :exclusive
   def execution_mode("spawn_agent"), do: :parallel
   def execution_mode("flatmap"), do: :exclusive
+  def execution_mode("explore_repo"), do: :exclusive
   def execution_mode("edit"), do: :exclusive
   def execution_mode("glob"), do: :parallel
   def execution_mode("web_search"), do: :parallel
@@ -183,6 +184,23 @@ defmodule Elixness.Tools do
             "required" => ["command"]
           }
         }
+      },
+      %{
+        "type" => "function",
+        "function" => %{
+          "name" => "explore_repo",
+          "description" =>
+            "Explore a directory in parallel: the harness scans the files, spawns ONE agent per file to analyze it, and summarizes. Use when the user asks what's in a repo / what a codebase does / to find relevant files — do NOT read files one by one yourself, just call this.",
+          "parameters" => %{
+            "type" => "object",
+            "properties" => %{
+              "question" => %{"type" => "string", "description" => "The question to answer about the repo, e.g. 'what tools does opencode have?'"},
+              "path" => %{"type" => "string", "description" => "Directory to explore (default: cwd)"},
+              "limit" => %{"type" => "integer", "description" => "Max files to analyze (default 10)"}
+            },
+            "required" => ["question"]
+          }
+        }
       }
     ]
   end
@@ -342,6 +360,30 @@ defmodule Elixness.Tools do
       {out, 0} -> out
       {out, code} -> "EXIT #{code}: #{out}"
     end
+  end
+
+  def execute(%{name: "explore_repo", arguments: args}) do
+    %{} = decoded = Jason.decode!(args)
+    question = Map.get(decoded, "question", "")
+    path = Map.get(decoded, "path", ".")
+    limit = Map.get(decoded, "limit", 10)
+
+    result = Elixness.Explore.run(path, question, limit: limit)
+
+    lines = ["EXPLORE_REPO RESULT: #{result.count} fichiers analysés (#{length(result.ok)} OK, #{length(result.errors)} erreurs)."]
+
+    lines =
+      lines ++
+        Enum.map(result.errors, fn err -> "  ✗ #{inspect(err)}" end)
+
+    lines =
+      lines ++
+        [
+          "TOTAL usage: prompt=#{result.usage["prompt_tokens"]} completion=#{result.usage["completion_tokens"]} " <>
+            "cost=#{result.usage["cost"]}"
+        ]
+
+    Enum.join(lines, "\n") <> "\n\n" <> result.summary
   end
 
   def execute(%{name: name}), do: "ERROR: unknown tool #{name}"

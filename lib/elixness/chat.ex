@@ -133,14 +133,18 @@ defmodule Elixness.Chat do
       spawns ONE agent per file, and collects. Use this when the user asks to
       translate/review/analyze many files. Do NOT explore or count files
       yourself first — just call `flatmap` with the task and path.
+    - `explore_repo`: explore a directory in parallel — the harness scans,
+      spawns ONE agent per file to analyze it, and summarizes. Use when the
+      user asks what's in a repo / what a codebase does / to find relevant
+      files. Do NOT read files one by one — just call `explore_repo`.
     Each subagent works in parallel with its own fresh conversation; the
     harness aggregates their usage.
 
-    After a `flatmap` returns: the harness already verified the work. The
-    result includes the changed files (git diff) and per-agent traces. Do NOT
-    re-scan, re-read, or re-search the files to verify — that is already done.
-    Only re-check if the user explicitly asks for it. This saves a huge amount
-    of tokens.
+    After a `flatmap` or `explore_repo` returns: the harness already verified
+    the work. The result includes the changed files (git diff) and per-agent
+    traces. Do NOT re-scan, re-read, or re-search the files to verify — that
+    is already done. Only re-check if the user explicitly asks for it. This
+    saves a huge amount of tokens.
 
     Respond in French by default (the user's language), unless asked otherwise.
     """
