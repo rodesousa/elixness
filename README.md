@@ -481,6 +481,20 @@ Le token est lu sans être affiché.
 (Hermes complet), **opencode** (via l'API Hermes). Comparer sur les 4 axes
 (coût, temps, qualité, traçage) avec le même prompt et les mêmes fichiers.
 
+## read_file borné (pattern deepseek)
+
+Le `read_file` est **borné** pour forcer le modèle à chercher avant de lire
+(le pattern des 3 harness — deepseek caps dures, opencode liste de dossiers) :
+
+- `read_file(path, offset?, limit?)` — lignes numérotées, défaut 2000 lignes max
+- Footer de pagination : `(Showing lines X-Y of Z. Use offset=Y+1 to continue.)`
+- Sur un **dossier** : liste les entrées `(directory)` (le modèle voit la
+  structure sans lire)
+- Description : « do NOT read whole files at once »
+
+**Mesuré** : « quels sont les tools d'opencode ? » → 176 673 prompt (read
+entiers) → **66 540** (read borné, 2.7x moins), qualité égale ou meilleure.
+
 ## Notes
 
 - Le token est lu brut depuis auth.json : s'il est expiré, l'API répond 401 et
