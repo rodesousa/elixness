@@ -578,29 +578,31 @@ sources de stockage, config.yaml `skills:`, ESSENTIAL_SKILLS, index prompt).
 
 | | Hermes (subagent) | elixness (chat) |
 |---|---|---|
-| api_calls / tool_calls | 26 | **11** ✅ |
-| prompt (input) | 60.5k + cache_read 1149k | 473k |
-| completion | 10.4k | 3k |
-| coût | ~0.019 $ | **0.0003 $** (63x moins cher) ✅ |
-| temps | 196s | **~135s** ✅ |
-| fichiers explorés | — | 200 (72 OK, garde-fou) |
+| api_calls / tool_calls | 26 | **10** ✅ |
+| prompt (input) | 60.5k + cache_read 1149k | 513k |
+| completion | 10.4k | 116k |
+| coût | ~0.019 $ | **0.0048 $** (~4x moins cher) ✅ |
+| temps | 196s | **~159s** ✅ |
+| fichiers explorés | — | 200 (garde-fou) |
 | limite de pas atteinte | oui | oui |
 | qualité | équivalente | équivalente |
 
 Note : les métriques Hermes viennent de la table `session_model_usage`
 (état.db, session `20260827_182942_298310`, le subagent skills) : 26 api_calls,
-input 60.5k + **1149k cache-read** (le cache neutralise le system prompt
-partagé — un avantage QUE Hermes a déjà, et malgré ça il coûte 63x plus cher),
-output 10.4k, ~0.019 $. elixness n'a PAS de cache-read (473k de prompt neuf) :
-la différence de coût vient du prix du modèle deepseek-v4-flash, pas du cache.
+input 60.5k + **1149k cache-read**, output 10.4k, ~0.019 $. Les métriques
+elixness viennent du run avec le fix ddd2736 (explore_repo retourne désormais
+`{:result, texte, usage}` → le loop agrège le coût des agents internes au
+parent) : sans ce fix, le log ne montrait que le turn du chat (0.0003 $),
+les 200 agents d'explore_repo étaient invisibles. Avec le fix : 513k prompt +
+116k completion + 0.0048 $, soit le vrai coût total.
 Runs précédents (même question) : sans garde-fou, explore_repo borné à 10
-fichiers → 17 tool_calls, cost 0.00045 $, ~90s. Avec garde-fou 200 → 11
-tool_calls, cost 0.0003 $, ~135s (plus de fichiers analysés donc plus lent,
-mais résultat plus riche et moins de tool_calls de rattrapage).
-**Lecture du cost élevé en tokens d'elixness (473k input)** : c'est le prix
-du « 1 agent par fichier avec contenu » de explore_repo (200 fichiers ×
-contenu). Mais le coût en $ reste ~60x moins cher que Hermes grâce à
-deepseek-v4-flash — le token n'est pas le bon comparateur, le $ oui.
+fichiers → 17 tool_calls, cost 0.00045 $ (non agrégé, faux), ~90s. Avec
+garde-fou 200 + fix usage → 10 tool_calls, 0.0048 $, ~159s.
+**Lecture du coût en tokens d'elixness (513k input, 116k output)** : c'est le
+prix du « 1 agent par fichier avec contenu » de explore_repo (200 fichiers ×
+contenu) + la complétion des agents (116k). Malgré un volume de tokens plus
+élevé, elixness reste ~4x moins cher que Hermes en $ — le token n'est pas le
+bon comparateur, le $ oui.
 
 **Leçon des 3 harness (deepseek/opencode/Hermes, analysés 2026-08-27)** : aucun
 ne pré-filtre les fichiers par pertinence, aucun n'a de map-reduce hiérarchique
