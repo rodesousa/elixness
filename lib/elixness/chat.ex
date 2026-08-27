@@ -90,7 +90,16 @@ defmodule Elixness.Chat do
     # Chaque envoi a son trace (observabilité des tool_calls du chat).
     {:ok, trace} = Elixness.Trace.start_link()
 
-    case Loop.run(auth, Elixness.LLM.default_model(), system, "", tools: Elixness.Tools.schemas(), messages: messages, trace: trace) do
+    # Streaming : un process qui affiche les tool_calls EN DIRECT (comme
+    # opencode/Hermes). Le loop envoie {:tool_start,...} / {:tool_end,...}.
+    streamer =
+      spawn_link(fn -> stream_tools() end)
+
+    case Loop.run(auth, Elixness.LLM.default_model(), system, "",
+           tools: Elixness.Tools.schemas(),
+           messages: messages,
+           trace: trace,
+           emit: streamer) do
       {:ok, content, %{usage: usage}} ->
         conversation = conversation ++ [%{role: "assistant", content: content}]
         IO.puts("  (usage: prompt=#{usage["prompt_tokens"]} completion=#{usage["completion_tokens"]})")
@@ -99,6 +108,25 @@ defmodule Elixness.Chat do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  # Affiche les tool_calls en direct : "[tool] name args → result (durée)"
+  defp stream_tools do
+    receive do
+      {:tool_start, name, args} ->
+        IO.puts("  → #{name} #{args}")
+        stream_tools()
+
+      {:tool_end, name, result, duration} ->
+        IO.puts("  ✓ #{name} → #{result} (#{duration}ms)")
+        stream_tools()
+
+      :stop ->
+        :ok
+
+      _ ->
+        stream_tools()
     end
   end
 

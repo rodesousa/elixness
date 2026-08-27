@@ -56,6 +56,9 @@ defmodule Elixness.Loop do
     inbox = Keyword.get(opts, :inbox)
     messages = Keyword.get(opts, :messages)
     trace = Keyword.get(opts, :trace)
+    # `emit` : pid qui reçoit les événements tools en DIRECT ({:tool_start, name, args}
+    # avant, {:tool_end, name, result, duration_ms} après) — le streaming.
+    emit = Keyword.get(opts, :emit)
 
     messages =
       messages ||
@@ -64,12 +67,12 @@ defmodule Elixness.Loop do
           %{role: "user", content: user_task}
         ]
 
-    loop(messages, llm, model, tools, 0, zero_usage(), inbox, trace)
+    loop(messages, llm, model, tools, 0, zero_usage(), inbox, trace, emit)
   end
 
   ## Boucle
 
-  defp loop(messages, llm, model, _tools, iter, acc, _inbox, _trace) when iter >= @max_iterations do
+  defp loop(messages, llm, model, _tools, iter, acc, _inbox, _trace, _emit) when iter >= @max_iterations do
     # MAX_STEPS_PROMPT (opencode) : au lieu d'échouer sec, on force le
     # modèle à résumer et arrêter. Tools non fournis → il ne peut que
     # répondre en texte.
@@ -82,7 +85,7 @@ defmodule Elixness.Loop do
     end
   end
 
-  defp loop(messages, llm, model, tools, iter, acc, inbox, trace) do
+  defp loop(messages, llm, model, tools, iter, acc, inbox, trace, emit) do
     # Drain l'inbox : les messages en attente sont ajoutés à la conversation.
     messages = drain_inbox(messages, inbox)
 
@@ -99,7 +102,7 @@ defmodule Elixness.Loop do
           # Le executionMode de deepseek : les tool_calls :parallel partent
           # ensemble (Task.async_stream), les :exclusive forment une barrière
           # et attendent que le groupe parallèle se vide (write, side-effects).
-          {results, child_usage} = execute_calls(calls, tool_state, trace)
+          {results, child_usage} = execute_calls(calls, tool_state, trace, emit)
 
           assistant_msg = %{
             role: "assistant",
@@ -120,10 +123,10 @@ defmodule Elixness.Loop do
             model,
             tools,
             iter + 1,
-            # Usage du parent (resp.usage) + usage des childs spawnés (child_usage)
             sum_usage(sum_usage(acc, resp.usage), child_usage),
             inbox,
-            trace
+            trace,
+            emit
           )
         end
 
@@ -136,12 +139,12 @@ defmodule Elixness.Loop do
   # Groupe les :parallel ensemble (concurrence), les :exclusive en barrière.
   # Les résultats sont réordonnés selon l'ordre ORIGINAL des calls (l'API
   # OpenAI exige tool results dans le même ordre que les tool_calls).
-  defp execute_calls(calls, tool_state, trace) do
+  defp execute_calls(calls, tool_state, trace, emit) do
     {parallel, exclusive} =
       Enum.split_with(calls, fn c -> Elixness.Tools.execution_mode(c.name) == :parallel end)
 
-    {p_results, p_usage} = run_parallel(parallel, tool_state, 10, trace)
-    {e_results, e_usage} = run_parallel(exclusive, tool_state, 1, trace)
+    {p_results, p_usage} = run_parallel(parallel, tool_state, 10, trace, emit)
+    {e_results, e_usage} = run_parallel(exclusive, tool_state, 1, trace, emit)
 
     # Réordonne par id de call original pour respecter l'ordre du modèle.
     by_id = Map.new(p_results ++ e_results, fn %{tool_call_id: id} = r -> {id, r} end)
@@ -151,17 +154,26 @@ defmodule Elixness.Loop do
   end
 
   # Lance un groupe de calls en parallèle (max_concurrency borné).
-  defp run_parallel([], _tool_state, _max, _trace), do: {[], zero_usage()}
+  defp run_parallel([], _tool_state, _max, _trace, _emit), do: {[], zero_usage()}
 
-  defp run_parallel(calls, tool_state, max, trace) do
+  defp run_parallel(calls, tool_state, max, trace, emit) do
     {results, usage} =
       calls
       |> Task.async_stream(
         fn call ->
+          # Streaming : émet le début du tool en DIRECT (si un pid emit est fourni).
+          if emit do
+            send(emit, {:tool_start, call.name, truncate(call.arguments, 120)})
+          end
+
           # Traçage : on mesure la durée et on journalise (args tronqués).
           started = System.monotonic_time(:millisecond)
           content = Elixness.Tools.execute(call, tool_state)
           duration = System.monotonic_time(:millisecond) - started
+
+          if emit do
+            send(emit, {:tool_end, call.name, truncate(inspect(content), 120), duration})
+          end
 
           if trace do
             Elixness.Trace.log(trace, %{
