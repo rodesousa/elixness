@@ -113,6 +113,36 @@ appel serait un avantage unique pour elixness.
 explore_repo devrait passer de 174k prompt/8 turns à ~30k prompt/2-3 turns →
 compétitif avec Hermes (31k).
 
+## 5. Réduire les tokens d'explore_repo (le trade-off du « 1 agent/fichier »)
+
+**Problème observé (benchmark Test 3b, 2026-08-27)** : le benchmark « comment
+les skills de Hermes sont configurés ? » a révélé un vrai trade-off. Avec le
+garde-fou 200 (ab78e23), explore_repo analyse 200 fichiers **avec le contenu
+complet** → elixness émet **528k prompt neuf + 300k cache-read + 69k output**
+(~897k tokens) alors que Hermes explore par composition (search_files + read
+ciblés) → **60.5k prompt + 1149k cache + 10.4k output**. Hermes est ~9x plus
+efficace en prompt neuf et ~7x en output.
+
+**Pourquoi ça coûte quand même moins cher** : elixness reste ~3.5x moins cher
+en $ (0.0055 $ vs 0.019 $) grâce au prix du token DeepSeek + 300k en
+cache-read. Mais en **volume de tokens**, le « 1 agent par fichier avec le
+contenu complet » est gourmand — c'est le point faible si les rate limits /
+quotas deviennent un souci.
+
+**Leçon des 3 harness (analysés 2026-08-27)** : aucun ne pré-filtre les
+fichiers, mais Hermes/opencode explorent par **composition ciblée**
+(search_files/grep + read borné) au lieu de tout passer en bloc. Le modèle
+décide quoi lire, le runtime borne (caps ≤100-250, read ≤2k lignes).
+
+**Design envisagé pour réduire les tokens** :
+- explore_repo ne passe plus le contenu COMPLET aux agents : seulement le
+  moduledoc / les headers / les définitions (extraction mécanique, zéro LLM),
+  comme le prévoyait le design initial de la section 4 (« extrait les points
+  clés : moduledoc, définitions, TODO »).
+- Ou : découpage en 2 passes — 1re passe `search_files` ciblé (le modèle
+  réduit le périmètre), 2e passe explore_repo sur le sous-ensemble pertinent.
+- Mesurer l'effet : rejouer le Test 3b, viser ~100k prompt max au lieu de 528k.
+
 ## Après (backlog)
 
 - Le dropdown fichiers (ratatui) — les fichiers en contexte visibles
@@ -126,3 +156,6 @@ compétitif avec Hermes (31k).
   par le modèle » (lent, sature) en « flatmap par le harness » (rapide, fiable).
 - La traçabilité vient juste après : sans logs, impossible de debuguer les
   agents enfants.
+- Trade-off tokens vs $ (Test 3b) : explore_repo gagne en $ et en temps mais
+  consomme ~9x plus de prompt neuf que Hermes (528k vs 60.5k) — le « 1 agent
+  par fichier avec contenu complet » est gourmand. Voir section 5.
