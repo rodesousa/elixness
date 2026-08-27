@@ -19,6 +19,11 @@ defmodule Elixness.Tools do
   def execution_mode("write_file"), do: :exclusive
   def execution_mode("spawn_agent"), do: :parallel
   def execution_mode("flatmap"), do: :exclusive
+  def execution_mode("edit"), do: :exclusive
+  def execution_mode("glob"), do: :parallel
+  def execution_mode("web_search"), do: :parallel
+  def execution_mode("web_extract"), do: :parallel
+  def execution_mode("terminal"), do: :exclusive
   def execution_mode(_), do: :exclusive
 
   @spec schemas() :: [map()]
@@ -104,6 +109,80 @@ defmodule Elixness.Tools do
             "required" => ["task"]
           }
         }
+      },
+      %{
+        "type" => "function",
+        "function" => %{
+          "name" => "edit",
+          "description" => "Edit a file by replacing an exact substring (old_string → new_string). Returns the updated file or an error.",
+          "parameters" => %{
+            "type" => "object",
+            "properties" => %{
+              "path" => %{"type" => "string", "description" => "Absolute file path"},
+              "old_string" => %{"type" => "string", "description" => "Exact text to find and replace"},
+              "new_string" => %{"type" => "string", "description" => "Replacement text"}
+            },
+            "required" => ["path", "old_string", "new_string"]
+          }
+        }
+      },
+      %{
+        "type" => "function",
+        "function" => %{
+          "name" => "glob",
+          "description" => "List files by name/pattern (e.g. **/*.ex). Returns matching paths.",
+          "parameters" => %{
+            "type" => "object",
+            "properties" => %{
+              "pattern" => %{"type" => "string", "description" => "Glob pattern, e.g. **/*.ex"},
+              "path" => %{"type" => "string", "description" => "Directory to search (default: cwd)"}
+            },
+            "required" => ["pattern"]
+          }
+        }
+      },
+      %{
+        "type" => "function",
+        "function" => %{
+          "name" => "web_search",
+          "description" => "Search the web. Returns up to N results (title, url, description).",
+          "parameters" => %{
+            "type" => "object",
+            "properties" => %{
+              "query" => %{"type" => "string", "description" => "The search query"},
+              "limit" => %{"type" => "integer", "description" => "Max results (default 5)"}
+            },
+            "required" => ["query"]
+          }
+        }
+      },
+      %{
+        "type" => "function",
+        "function" => %{
+          "name" => "web_extract",
+          "description" => "Extract readable text content from a URL (web page or PDF).",
+          "parameters" => %{
+            "type" => "object",
+            "properties" => %{
+              "url" => %{"type" => "string", "description" => "The URL to extract"}
+            },
+            "required" => ["url"]
+          }
+        }
+      },
+      %{
+        "type" => "function",
+        "function" => %{
+          "name" => "terminal",
+          "description" => "Run a shell command. Returns stdout/stderr and exit code.",
+          "parameters" => %{
+            "type" => "object",
+            "properties" => %{
+              "command" => %{"type" => "string", "description" => "The shell command to run"}
+            },
+            "required" => ["command"]
+          }
+        }
       }
     ]
   end
@@ -186,7 +265,140 @@ defmodule Elixness.Tools do
     end
   end
 
+  def execute(%{name: "edit", arguments: args}) do
+    %{} = decoded = Jason.decode!(args)
+    path = Map.get(decoded, "path")
+    old_string = Map.get(decoded, "old_string", "")
+    new_string = Map.get(decoded, "new_string", "")
+
+    with {:ok, content} <- File.read(path),
+         true <- String.contains?(content, old_string),
+         :ok <- File.write(path, String.replace(content, old_string, new_string, global: false)) do
+      "OK: replaced in #{path}"
+    else
+      false -> "ERROR: old_string not found in #{path}"
+      {:error, reason} -> "ERROR: #{inspect(reason)}"
+      _ -> "ERROR: could not edit #{path}"
+    end
+  end
+
+  def execute(%{name: "glob", arguments: args}) do
+    %{} = decoded = Jason.decode!(args)
+    pattern = Map.get(decoded, "pattern", "**/*")
+    path = Map.get(decoded, "path", ".")
+
+    path
+    |> Path.join(pattern)
+    |> Path.wildcard()
+    |> Enum.reject(&String.contains?(&1, ["_build", "deps/", ".git"]))
+    |> Enum.take(50)
+    |> case do
+      [] -> "No files matching #{pattern} in #{path}"
+      files -> Enum.join(files, "\n")
+    end
+  end
+
+  def execute(%{name: "web_search", arguments: args}) do
+    %{} = decoded = Jason.decode!(args)
+    query = Map.get(decoded, "query", "")
+    limit = Map.get(decoded, "limit", 5)
+
+    # Backend de recherche : DuckDuckGo HTML (gratuit, sans clé).
+    url = "https://html.duckduckgo.com/html/?q=" <> URI.encode_www_form(query)
+
+    case Req.get(url, headers: [{"user-agent", "elixness-agent"}]) do
+      {:ok, %Req.Response{status: 200, body: body}} ->
+        results = parse_ddg_results(body) |> Enum.take(limit)
+        if results == [] do
+          "No web results for #{query}"
+        else
+          Enum.join(results, "\n")
+        end
+
+      {:ok, %Req.Response{status: status}} ->
+        "ERROR: web_search HTTP #{status}"
+
+      {:error, reason} ->
+        "ERROR: web_search #{inspect(reason)}"
+    end
+  end
+
+  def execute(%{name: "web_extract", arguments: args}) do
+    %{} = decoded = Jason.decode!(args)
+    url = Map.get(decoded, "url", "")
+
+    case Req.get(url, headers: [{"user-agent", "elixness-agent"}]) do
+      {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
+        # Extrait le texte lisible (grossier : retire les balises HTML).
+        text =
+          body
+          |> String.replace(~r/<script[\s\S]*?<\/script>/i, " ")
+          |> String.replace(~r/<style[\s\S]*?<\/style>/i, " ")
+          |> String.replace(~r/<[^>]+>/, " ")
+          |> String.replace(~r/\s+/, " ")
+          |> String.slice(0, 6000)
+
+        text
+
+      {:ok, %Req.Response{status: status}} ->
+        "ERROR: web_extract HTTP #{status}"
+
+      {:error, reason} ->
+        "ERROR: web_extract #{inspect(reason)}"
+    end
+  end
+
+  def execute(%{name: "terminal", arguments: args}) do
+    %{} = decoded = Jason.decode!(args)
+    command = Map.get(decoded, "command", "")
+
+    case System.cmd("sh", ["-c", command], stderr_to_stdout: true) do
+      {out, 0} -> out
+      {out, code} -> "EXIT #{code}: #{out}"
+    end
+  end
+
   def execute(%{name: name}), do: "ERROR: unknown tool #{name}"
+
+  # Parse les résultats de DuckDuckGo HTML (liens .result__a).
+  defp parse_ddg_results(body) do
+    # Les liens de résultat ont class="result__a" et href="//duckduckgo.com/l/?uddg=<encodé>"
+    title_re = ~r/class="result__a"[^>]*>(.*?)<\/a>/
+    href_re = ~r/class="result__a"[^>]*href="([^"]*)"/
+    snip_re = ~r/class="result__snippet"[^>]*>(.*?)<\/a>/
+
+    titles = Regex.scan(title_re, body) |> Enum.map(fn [_, t] -> strip_html(t) end)
+    hrefs = Regex.scan(href_re, body) |> Enum.map(fn [_, h] -> h end)
+    snips = Regex.scan(snip_re, body) |> Enum.map(fn [_, s] -> strip_html(s) end)
+
+    titles
+    |> Enum.zip(hrefs)
+    |> Enum.zip(snips)
+    |> Enum.map(fn {{title, href}, snip} ->
+      url = decode_ddg_url(href)
+      "#{title}\n  #{url}\n  #{snip}"
+    end)
+  end
+
+  defp strip_html(s) do
+    s
+    |> String.replace("&amp;", "&")
+    |> String.replace("&quot;", "\"")
+    |> String.replace("&#x27;", "'")
+    |> String.replace("&lt;", "<")
+    |> String.replace("&gt;", ">")
+    |> String.replace(~r/<[^>]+>/, "")
+  end
+
+  # L'URL DuckDuckGo est https://duckduckgo.com/l/?uddg=<url encodée> — on extrait le vrai lien.
+  defp decode_ddg_url(href) do
+    case URI.decode_query(String.trim_leading(href, "//duckduckgo.com/l/?")["uddg"] || "") do
+      "" -> href
+      url -> url
+    end
+  rescue
+    _ -> href
+  end
 
   # Remplace les octets invalides par U+FFFD.
   defp sanitize_utf8(binary) do
