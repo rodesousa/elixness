@@ -510,7 +510,6 @@ Chaque évolution est comparée à C sur les 4 axes (coût, temps, qualité, tra
 | sans plafond (7b3ddaf) | 463k | 1 seul | 10 fichiers, 4 traduits |
 | **nettoyé (ec2e47b)** | **390k** | **1 seul** | **10 fichiers, agent_task.ex traduit, git diff OK** ✅ |
 | streaming fix (0cf508f) | 431k | 1 seul | 10 fichiers, 2 modifiés (agent_task.ex + datation.ex), 8 déjà EN, git diff + mix compile OK ✅ |
-| UTF-8 fix (chat) | 789k | 2 (10 puis limit 30) | **29/29 agents OK, 9 fichiers modifiés, 0 commentaire FR restant, compile OK — cost réel 0.00665 $** ✅ |
 
 Le retrait du plafond de 10 agents (commit 7b3ddaf) a éliminé le re-flatmap :
 `flatmap: 1` (traite tous les fichiers FR), vérification par `git diff` +
