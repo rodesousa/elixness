@@ -5,6 +5,6 @@ defmodule ElixnessTest do
     model = Elixness.LLM.default_model()
     assert is_binary(model)
     assert model != ""
-    assert Elixness.LLM.instruction() =~ "translate"
+    assert Elixness.LLM.instruction() =~ "coding agent"
   end
 end

@@ -125,7 +125,7 @@ defmodule Elixness.Flatmap do
   # résultat dans le fichier. ~3x moins de requêtes que le mode :loop.
   defp run_direct(auth, model, system, task, job) do
     prompt =
-      "#{task}\n\nFile: #{job.file}\n\nFull file content:\n#{String.slice(job.text, 0, 4000)}\n\n" <>
+      "#{task}\n\nFile: #{job.file}\n\nFull file content:\n#{String.slice(job.text, 0, 12_000)}\n\n" <>
         "Do the task on the file content above. " <>
         "Return the COMPLETE modified file content (the whole file, with the changes applied). " <>
         "Do NOT return just the changed parts — return the entire file. No preamble."
