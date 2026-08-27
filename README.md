@@ -510,6 +510,12 @@ Chaque évolution est comparée à C sur les 4 axes (coût, temps, qualité, tra
 | sans plafond (7b3ddaf) | 463k | 1 seul | 10 fichiers, 4 traduits |
 | **nettoyé (ec2e47b)** | **390k** | **1 seul** | **10 fichiers, agent_task.ex traduit, git diff OK** ✅ |
 | streaming fix (0cf508f) | 431k | 1 seul | 10 fichiers, 2 modifiés (agent_task.ex + datation.ex), 8 déjà EN, git diff + mix compile OK ✅ |
+| flatmap illimité (070704f) | **146k** | 1 seul (limit 10 passé par le modèle) | 10 fichiers, 1 modifié (agent_task.ex), 9 déjà EN, cost **0.0014 $**, 41.5s, git diff + compile OK ✅ |
+
+**Comparaison à C (Hermes, 10 fichiers)** : C = 42s, ~0.0168 $, 10/10, structure préservée.
+Le run le plus propre (flatmap illimité) : **0.0014 $ pour 10 fichiers (~12x moins cher que C)**,
+41.5s ≈ C (42s). Le modèle a déduit `limit: 10` du langage naturel (« les 10 premiers
+fichiers ») sans qu'on le passe explicitement — comportement attendu du flatmap illimité.
 
 Le retrait du plafond de 10 agents (commit 7b3ddaf) a éliminé le re-flatmap :
 `flatmap: 1` (traite tous les fichiers FR), vérification par `git diff` +
