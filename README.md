@@ -495,6 +495,42 @@ Le `read_file` est **borné** pour forcer le modèle à chercher avant de lire
 **Mesuré** : « quels sont les tools d'opencode ? » → 176 673 prompt (read
 entiers) → **66 540** (read borné, 2.7x moins), qualité égale ou meilleure.
 
+## Les 3 tests du benchmark vs C (Hermes)
+
+Le goal : elixness doit faire **mieux que Hermes** sur 3 scénarios concrets.
+Chaque évolution est comparée à C sur les 4 axes (coût, temps, qualité, traçage).
+
+### Test 1 — Traduction (commentaires FR → EN, `lib/inductive/domain`)
+
+| Version (commit) | prompt | flatmap | résultat |
+|---|---|---|---|
+| avant compact | 807k | 1 | 5 fichiers |
+| streaming (6d4de16) | 428k | 1 | 7 fichiers |
+| read borné (09bf92e) | 1.4M | 2 (re-lancé) | 8 fichiers ❌ |
+| **sans plafond (7b3ddaf)** | **463k** | **1 seul** | 10 fichiers traités, 4 traduits, `mix compile` OK ✅ |
+
+Le retrait du plafond de 10 agents (commit 7b3ddaf) a éliminé le re-flatmap :
+`flatmap: 1` (traite tous les fichiers FR), vérification par `git diff` +
+`mix compile` (le pattern opencode/Hermes). Prompt 1.4M → 463k.
+Reste : le mode `:direct` réparé (écrire dans le source) pour vraiment
+battre C sur le coût (C ≈ 0.0168 $, ~42s).
+
+### Test 2 — Recherche sur internet (web_search + résumé 3 sources)
+
+À faire : brancher Exa (priorité 3), tester « résume ce sujet en cherchant
+3 sources », comparer vs C.
+
+### Test 3 — Explorer un repo (ex. « quels sont les tools d'opencode ? »)
+
+| | Hermes | elixness explore_repo (2c25719) |
+|---|---|---|
+| prompt | 24 512 | **20 969** ✅ |
+| coût | 0.0054 $ | **0.001 $** (5.4x) ✅ |
+| temps | ~105s | **23.6s** (4.5x) ✅ |
+
+elixness **bat Hermes** sur l'exploration de repo (explore_repo : rg → flatmap
+→ reduce). À re-confirmer avec le read borné (09bf92e).
+
 ## Notes
 
 - Le token est lu brut depuis auth.json : s'il est expiré, l'API répond 401 et

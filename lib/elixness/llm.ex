@@ -75,28 +75,6 @@ defmodule Elixness.LLM do
     end
   end
 
-  @doc """
-  Traduit `fr_text` via le modèle. Retourne `{:ok, texte_en, usage, extra}`
-  où `usage` est le map usage normalisé (prompt/completion/total + cost +
-  reasoning_tokens) et `extra` est `%{reasoning: raisonnement}`.
-  """
-  def translate(%{} = llm, model, fr_text, opts \\ []) do
-    system = Keyword.get(opts, :system, @instruction)
-
-    messages = [
-      %{role: "system", content: system},
-      %{role: "user", content: "French docstring to translate:\n\n" <> fr_text}
-    ]
-
-    case chat(llm, model, messages, opts) do
-      {:ok, %{content: content, usage: usage, reasoning: reasoning}} ->
-        {:ok, String.trim(content), usage, %{reasoning: reasoning}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
   ## Helpers
 
   defp normalize_usage(usage) do

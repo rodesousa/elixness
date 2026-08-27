@@ -117,17 +117,16 @@ defmodule Elixness.Flatmap do
   end
 
   defp task_for(job, task) do
-    "#{task}\n\nFile: #{job.file}\nFrench content:\n#{job.text}"
+    "#{task}\n\nFile: #{job.file}\nContent:\n#{String.slice(job.text, 0, 4000)}"
   end
 
   # Mode :direct — UN appel LLM par agent. Le contenu est passé directement
-  # (le Discover l'a déjà lu), le modèle traduit, le harness écrit le résultat
-  # dans le fichier. ~3x moins de requêtes que le mode :loop.
+  # (le Discover l'a déjà lu), le modèle fait la tâche, le harness écrit le
+  # résultat dans le fichier. ~3x moins de requêtes que le mode :loop.
   defp run_direct(auth, model, system, task, job) do
     prompt =
-      "#{task}\n\nFile: #{job.file}\nFrench content:\n#{job.text}\n\n" <>
-        "Return ONLY the translated docstring/content in English, with no preamble. " <>
-        "Keep structure, code blocks, backticks, identifiers intact."
+      "#{task}\n\nFile: #{job.file}\nContent:\n#{String.slice(job.text, 0, 4000)}\n\n" <>
+        "Do the task on the content above. Return ONLY the result, no preamble."
 
     messages = [
       %{role: "system", content: system},
@@ -136,8 +135,9 @@ defmodule Elixness.Flatmap do
 
     case Elixness.LLM.chat(auth, model, messages, tools: []) do
       {:ok, %{content: content, usage: usage}} when content != "" ->
-        # Le harness écrit mécaniquement le résultat dans le fichier.
-        write_translation(job.file, content)
+        # Le harness patche le fichier SOURCE : remplace le contenu FR
+        # (job.text) par la traduction — garde les délimiteurs du moduledoc.
+        patch_source(job, content)
         {:ok, content, %{usage: usage}}
 
       {:ok, %{content: _content, usage: _usage}} ->
@@ -148,14 +148,21 @@ defmodule Elixness.Flatmap do
     end
   end
 
-  # Écrit la traduction dans le fichier. Pour un POC, on remplace le
-  # @moduledoc par la traduction (le cas le plus simple et comparable à C).
-  # Note : pour une vraie implémentation, on patcherait précisément le
-  # moduledoc dans l'AST — ici on écrit un fichier .en à côté (sans détruire
-  # le source), ce qui est sûr et comparable.
-  defp write_translation(file, content) do
-    out = file <> ".en.txt"
-    File.write!(out, content)
+  # Patche le fichier source : remplace job.text (le moduledoc FR) par la
+  # traduction EN — les délimiteurs (" ou """) restent en place.
+  defp patch_source(job, translation) do
+    with {:ok, content} <- File.read(job.file),
+         true <- String.contains?(content, job.text) do
+      # Précision : on remplace le contenu exact, mais job.text peut apparaître
+      # aussi comme sous-chaîne d'autre chose. On remplace la 1ère occurrence
+      # (le moduledoc est le 1er @moduledoc généralement) — ou mieux, on vise
+      # la position de la ligne/colonne. Pour un POC, on remplace la première
+      # occurrence du texte exact.
+      new_content = String.replace(content, job.text, translation, global: false)
+      File.write!(job.file, new_content)
+    else
+      _ -> :ok  # ne pas crasher si le texte n'est pas trouvé (fichier déjà changé)
+    end
   end
 
   # Les fichiers modifiés par le flatmap (git diff --name-only) — le pattern
