@@ -18,12 +18,12 @@ defmodule Elixness.Explore do
 
   @doc """
   Explore `path` avec la question `question`.
-  - `limit` : nombre max de fichiers à analyser (défaut 10).
+  - `limit` : nombre max de fichiers à analyser (défaut `:all` = illimité).
   - Retourne `%{ok:, errors:, usage:, count:, files:, summary:}` où `summary`
     est le résumé texte concaténé (ce que le modèle voit).
   """
   def run(path, question, opts \\ []) do
-    limit = Keyword.get(opts, :limit, 10)
+    limit = Keyword.get(opts, :limit, :all)
     model = Keyword.get(opts, :model) || LLM.default_model()
     system = Keyword.get(opts, :system) || LLM.instruction()
 
@@ -71,17 +71,19 @@ defmodule Elixness.Explore do
 
   defp discover_files(path, limit) do
     # rg --files respecte .gitignore et saute les binaires — le backbone recommandé.
+    take = if limit == :all, do: 10_000, else: limit
+
     case System.cmd("rg", ["--files", "-g", "*.{ex,exs,ts,tsx,js,py,md}", path], stderr_to_stdout: true) do
       {out, 0} ->
         out
         |> String.split("\n", trim: true)
-        |> Enum.take(limit)
+        |> Enum.take(take)
 
       _ ->
         # fallback glob si rg absent
         Path.join(path, "**/*.{ex,exs,ts,tsx,js,py,md}")
         |> Path.wildcard()
-        |> Enum.take(limit)
+        |> Enum.take(take)
     end
   end
 

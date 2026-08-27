@@ -194,13 +194,13 @@ defmodule Elixness.Tools do
         "function" => %{
           "name" => "explore_repo",
           "description" =>
-            "Explore a directory in parallel: the harness scans the files, spawns ONE agent per file to analyze it, and summarizes. Use when the user asks what's in a repo / what a codebase does / to find relevant files — do NOT read files one by one yourself, just call this.",
+            "Explore a directory in parallel: the harness scans the files, spawns ONE agent per file to analyze it, and summarizes. Processes EVERY file found (no limit). Use when the user asks what's in a repo / what a codebase does / to find relevant files — do NOT read files one by one yourself, just call this.",
           "parameters" => %{
             "type" => "object",
             "properties" => %{
               "question" => %{"type" => "string", "description" => "The question to answer about the repo, e.g. 'what tools does opencode have?'"},
               "path" => %{"type" => "string", "description" => "Directory to explore (default: cwd)"},
-              "limit" => %{"type" => "integer", "description" => "Max files to analyze (default 10)"}
+              "limit" => %{"type" => "integer", "description" => "Max files to analyze (default: all found). Only pass this if the user asks for a subset."}
             },
             "required" => ["question"]
           }
@@ -406,7 +406,9 @@ defmodule Elixness.Tools do
     %{} = decoded = Jason.decode!(args)
     question = Map.get(decoded, "question", "")
     path = Map.get(decoded, "path", ".")
-    limit = Map.get(decoded, "limit", 10)
+    # Pas de plafond par défaut : explore TOUS les fichiers découverts.
+    # `limit` n'est utilisé que si le modèle le précise explicitement.
+    limit = Map.get(decoded, "limit", :all)
 
     result = Elixness.Explore.run(path, question, limit: limit)
 
