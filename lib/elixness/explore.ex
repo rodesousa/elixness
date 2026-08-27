@@ -16,6 +16,11 @@ defmodule Elixness.Explore do
 
   alias Elixness.{Auth, LLM}
 
+  # Garde-fou budget : on ne lance JAMAIS 1 agent LLM par fichier si la liste
+  # pertinente est énorme — le coût exploserait. Au-delà de ce seuil on coupe
+  # (le modèle peut passer un limit explicite pour borner davantage).
+  @max_analyze 200
+
   @doc """
   Explore `path` avec la question `question`.
   - `limit` : nombre max de fichiers à analyser (défaut `:all` = illimité).
@@ -31,15 +36,24 @@ defmodule Elixness.Explore do
 
     files = discover_files(path, limit)
 
+    # Garde-fou budget (leçon des 3 harness : le runtime borne, pas le modèle) :
+    # on ne lance JAMAIS 1 agent LLM par fichier si la liste est énorme — le
+    # coût exploserait. Au-delà du seuil, on coupe (le modèle peut passer un
+    # limit explicite pour borner davantage, ou réduire le périmètre d'abord).
+    files = if length(files) > @max_analyze, do: Enum.take(files, @max_analyze), else: files
+
     # flatmap : spawn UN agent par fichier qui analyse (mode :direct — 1 appel
     # LLM par fichier, le contenu est passé directement par le harness).
+    # Concurrence BORNÉE : tout en parallèle (max(length(files),1)) sature le
+    # pool Finch avec un grand repo (ex. 8780 fichiers → "excess queuing").
+    # On traite TOUS les fichiers mais avec un nombre de connexions limité.
     results =
       files
       |> Task.async_stream(
         fn file ->
           analyze_file(auth, model, system, question, file)
         end,
-        max_concurrency: max(length(files), 1),
+        max_concurrency: 20,
         timeout: :infinity,
         ordered: true
       )
@@ -69,10 +83,15 @@ defmodule Elixness.Explore do
 
   ## Découverte (rg/glob — le harness trouve les fichiers)
 
+  # Liste les fichiers du repo. Leçon des 3 harness (deepseek/opencode/Hermes) :
+  # personne ne pré-filtre les fichiers par pertinence — c'est le modèle qui
+  # réduit le périmètre avec ses tools (search_files/glob) avant de déléguer.
+  # Le rôle du harness est de BORNER (garde-fou budget + concurrency), pas de
+  # décider quoi analyser. `limit` borne la liste (défaut :all = tous).
   defp discover_files(path, limit) do
-    # rg --files respecte .gitignore et saute les binaires — le backbone recommandé.
     take = if limit == :all, do: 10_000, else: limit
 
+    # rg --files respecte .gitignore et saute les binaires — le backbone recommandé.
     case System.cmd("rg", ["--files", "-g", "*.{ex,exs,ts,tsx,js,py,md}", path], stderr_to_stdout: true) do
       {out, 0} ->
         out

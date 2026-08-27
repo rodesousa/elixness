@@ -37,6 +37,9 @@ defmodule Elixness.Flatmap do
     jobs = Discover.scan(root, limit: if(limit == :all, do: 10_000, else: limit))
 
     # spawn UN agent par fichier (le flatmap) — parallèle, éphémère.
+    # Concurrence BORNÉE : tout en parallèle (max(length(jobs),1)) sature le
+    # pool Finch sur un gros dossier. On traite TOUS les fichiers avec un
+    # nombre de connexions limité (même pattern que explore_repo).
     results =
       jobs
       |> Task.async_stream(
@@ -52,7 +55,7 @@ defmodule Elixness.Flatmap do
 
           {r, Elixness.Trace.summary(trace)}
         end,
-        max_concurrency: max(length(jobs), 1),
+        max_concurrency: 20,
         timeout: :infinity,
         ordered: true
       )
