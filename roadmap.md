@@ -56,6 +56,28 @@ que l'agent elixness explore sans rien afficher en direct (le log reste à 12
 lignes pendant qu'il travaille) — impossible de savoir ce qu'il fait. L'affichage
 en direct est LA différence UX avec opencode/Hermes qui streament les tool calls.
 
+## 3. Le test de recherche internet — web_search + résumé 3 sources
+
+**Problème à valider** : elixness n'a pas de tool de recherche web. On veut
+tester le cas « résume ce sujet en cherchant 3 sources sur internet » — un
+2e benchmark vs C (Hermes fait déjà web_search + résumé).
+
+**Le but** :
+- Ajouter un tool `web_search` (+ `web_extract` ou lecture d'URL)
+- Tester : « résume le sujet X en cherchant 3 sources »
+- Comparer elixness vs C sur les 4 axes (coût, temps, qualité, traçage)
+
+**Design envisagé** :
+- Simple d'abord : `web_search` + `web_extract` (le modèle cherche, lit, résume)
+- Si le chat explore trop (comme avant) → `flatmap_web` mécanique (le harness
+  cherche, spawn 1 agent/source, synthétise)
+- Le reduce (synthèse multi-sources) est un nouveau pattern à tester
+
+**Pourquoi c'est important** : valide le flatmap sur un cas NON trivial
+(synthèse > traduction) et ajoute un vrai tool utile — elixness devient un
+agent complet. Test validé par l'utilisateur (2026-08-27) avant la bifurcation
+exploration de repo.
+
 ## Après (backlog)
 
 - Le dropdown fichiers (ratatui) — les fichiers en contexte visibles
