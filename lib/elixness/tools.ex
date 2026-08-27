@@ -548,7 +548,8 @@ defmodule Elixness.Tools do
       Elixness.Flatmap.run(path, task,
         limit: limit,
         model: model,
-        system: system
+        system: system,
+        mode: :direct
       )
 
     {:result, Elixness.Flatmap.summarize(result), result.usage}

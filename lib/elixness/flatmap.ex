@@ -125,8 +125,10 @@ defmodule Elixness.Flatmap do
   # résultat dans le fichier. ~3x moins de requêtes que le mode :loop.
   defp run_direct(auth, model, system, task, job) do
     prompt =
-      "#{task}\n\nFile: #{job.file}\nContent:\n#{String.slice(job.text, 0, 4000)}\n\n" <>
-        "Do the task on the content above. Return ONLY the result, no preamble."
+      "#{task}\n\nFile: #{job.file}\n\nFull file content:\n#{String.slice(job.text, 0, 4000)}\n\n" <>
+        "Do the task on the file content above. " <>
+        "Return the COMPLETE modified file content (the whole file, with the changes applied). " <>
+        "Do NOT return just the changed parts — return the entire file. No preamble."
 
     messages = [
       %{role: "system", content: system},
@@ -135,9 +137,8 @@ defmodule Elixness.Flatmap do
 
     case Elixness.LLM.chat(auth, model, messages, tools: []) do
       {:ok, %{content: content, usage: usage}} when content != "" ->
-        # Le harness patche le fichier SOURCE : remplace le contenu FR
-        # (job.text) par la traduction — garde les délimiteurs du moduledoc.
-        patch_source(job, content)
+        # Le harness écrit le fichier complet modifié (mode direct : 1 appel/agent).
+        File.write!(job.file, content)
         {:ok, content, %{usage: usage}}
 
       {:ok, %{content: _content, usage: _usage}} ->
@@ -145,23 +146,6 @@ defmodule Elixness.Flatmap do
 
       {:error, reason} ->
         {:error, reason}
-    end
-  end
-
-  # Patche le fichier source : remplace job.text (le moduledoc FR) par la
-  # traduction EN — les délimiteurs (" ou """) restent en place.
-  defp patch_source(job, translation) do
-    with {:ok, content} <- File.read(job.file),
-         true <- String.contains?(content, job.text) do
-      # Précision : on remplace le contenu exact, mais job.text peut apparaître
-      # aussi comme sous-chaîne d'autre chose. On remplace la 1ère occurrence
-      # (le moduledoc est le 1er @moduledoc généralement) — ou mieux, on vise
-      # la position de la ligne/colonne. Pour un POC, on remplace la première
-      # occurrence du texte exact.
-      new_content = String.replace(content, job.text, translation, global: false)
-      File.write!(job.file, new_content)
-    else
-      _ -> :ok  # ne pas crasher si le texte n'est pas trouvé (fichier déjà changé)
     end
   end
 
