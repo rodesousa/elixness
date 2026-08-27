@@ -99,10 +99,11 @@ defmodule Elixness.Tools do
         "function" => %{
           "name" => "flatmap",
           "description" =>
-            "Run a task across many files in parallel: the harness scans the directory, " <>
-              "spawns ONE agent per file, and collects the results. Use when the user asks " <>
-              "to process a whole directory (translate, review, analyze many files). " <>
-              "You do NOT need to explore or count files yourself — just call this.",
+            "Run a task across ALL files in a directory, in parallel: the harness scans, " <>
+              "spawns ONE agent per file, and collects. Use when the user asks to process " <>
+              "a whole directory (translate, review, analyze many files). Processes every " <>
+              "file found (no limit). Do NOT explore or count files yourself — just call " <>
+              "this with the directory. Only pass limit if the user asks for a subset.",
           "parameters" => %{
             "type" => "object",
             "properties" => %{
@@ -538,11 +539,13 @@ defmodule Elixness.Tools do
 
   # Le flatmap mécanique : Discover → spawn 1 agent/fichier → collecte.
   # Retourne le résumé que le modèle voit (pas l'historique des agents).
+  # Pas de plafond par défaut : `limit` n'est utilisé que si le modèle le
+  # précise explicitement (sinon :all = tous les fichiers découverts).
   defp execute_flatmap(args, _llm, model, system) do
     %{} = decoded = Jason.decode!(args)
     task = Map.get(decoded, "task", "")
     path = Map.get(decoded, "path", File.cwd!())
-    limit = Map.get(decoded, "limit", 10)
+    limit = Map.get(decoded, "limit", :all)
 
     result =
       Elixness.Flatmap.run(path, task,
