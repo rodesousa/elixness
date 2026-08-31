@@ -20,6 +20,7 @@ defmodule Elixness.Tools do
   def execution_mode("spawn_agent"), do: :parallel
   def execution_mode("flatmap"), do: :exclusive
   def execution_mode("explore_repo"), do: :exclusive
+  def execution_mode("catalog"), do: :parallel
   def execution_mode("edit"), do: :exclusive
   def execution_mode("glob"), do: :parallel
   def execution_mode("web_search"), do: :parallel
@@ -186,6 +187,22 @@ defmodule Elixness.Tools do
               "command" => %{"type" => "string", "description" => "The shell command to run"}
             },
             "required" => ["command"]
+          }
+        }
+      },
+      %{
+        "type" => "function",
+        "function" => %{
+          "name" => "catalog",
+          "description" =>
+            "Build a compact ZERO-LLM catalog of a directory: file paths + line counts + sizes + key symbols extracted by regex (modules/defs for Elixir, export/class/function for TS/JS, def/class for Python, headings for Markdown) + leading docstring. ~50-100 tokens per file instead of a full LLM analysis. Use this FIRST to orient yourself in a repo and choose which files to read — then read only the relevant ones. Much cheaper than explore_repo.",
+          "parameters" => %{
+            "type" => "object",
+            "properties" => %{
+              "path" => %{"type" => "string", "description" => "Directory to catalog (default: cwd)"},
+              "limit" => %{"type" => "integer", "description" => "Max files to catalog (default: all found up to 1000)"}
+            },
+            "required" => []
           }
         }
       },
@@ -400,6 +417,16 @@ defmodule Elixness.Tools do
       {out, 0} -> out
       {out, code} -> "EXIT #{code}: #{out}"
     end
+  end
+
+  def execute(%{name: "catalog", arguments: args}) do
+    %{} = decoded = Jason.decode!(args)
+    path = Map.get(decoded, "path", ".")
+    limit = Map.get(decoded, "limit", :all)
+
+    result = Elixness.Catalog.run(path, limit: limit)
+
+    "CATALOG RESULT: #{result.count} fichiers catalogués (zero-LLM, aucun agent).\n\n" <> result.text
   end
 
   def execute(%{name: "explore_repo", arguments: args}) do

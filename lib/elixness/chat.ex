@@ -195,6 +195,12 @@ defmodule Elixness.Chat do
       spawns ONE agent per file to analyze it, and summarizes. Use when the
       user asks what's in a repo / what a codebase does / to find relevant
       files. Do NOT read files one by one — just call `explore_repo`.
+    - `catalog`: build a compact ZERO-LLM catalog of a directory (paths +
+      symbols + docstrings, ~50-100 tokens per file). Use this FIRST to
+      orient yourself and choose which files matter, THEN read only those.
+      Prefer `catalog` over `explore_repo` when you just need to find
+      relevant files — it costs almost nothing. Use `explore_repo` only when
+      you need a deep per-file analysis of the whole directory.
     Each subagent works in parallel with its own fresh conversation; the
     harness aggregates their usage.
 
