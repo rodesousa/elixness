@@ -700,8 +700,12 @@ ONLY when the user explicitly asks to process the whole directory »).
   les 8 fichiers pertinents (skill/src, skill-filesystem, tool-skill,
   skill-badge, docs/subsystems/skills.md, cordis.patch.yml, agent.cordis.yml)
 - usage : prompt **719 537 (dont cache_read 599 552 → fresh ~120k)**,
-  completion 5 174, **cost 0.0004 $** — vs 0.0092 $ (3c) et 0.019 $ (Hermes
-  Test 3b) → **~23x moins cher que le 3c, ~47x moins cher que Hermes**
+  completion 5 174, **cost 0.0004 $** — vs 0.0092 $ (3c, elixness) →
+  **~23x moins cher que le 3c** (le catalogue zéro-LLM + lectures ciblées
+  divisent NOTRE coût). ⚠️ Ne PAS comparer ce 0.0004 $ au 0.019 $ de Hermes :
+  c'est comparer le réel (elixness) à l'estimé-catalogue (Hermes) — voir
+  section « Le coût réel » ci-dessous : **à prix égal, Hermes est toujours
+  moins cher** (il émet moins de tokens).
 - temps ~105s, qualité excellente (8 fichiers clés cités, équivalent Hermes)
 
 **Le levier « commande vs suggestion »** (test G) : une règle impérative
@@ -746,6 +750,31 @@ prompt. Ça paraît dérisoire → vérifié par un test d'appel réel :
 - Le `cost` renvoyé par l'API est la facturation effective du compte (le
   champ externe n'est pas indépendamment vérifiable ici, mais les chiffres
   sont cohérents : nombre de requêtes × plancher).
+
+### ⚠️⚠️ Le point qui change tout : Hermes est TOUJOURS moins cher
+
+Correction méthodologique (2026-08-31) : les tableaux des Tests 2/3b/3c/3e
+comparent le coût **réel d'elixness** (renvoyé par l'API, ~0.001 $/M) au coût
+**estimé de Hermes** (colonne `estimated_cost_usd` de state.db, calculée au
+prix catalogue 0.14/0.28 $/M — la colonne `actual_cost_usd` de Hermes est à
+**0.0**, jamais remplie). **Comparer les deux = comparer des pommes et des
+oranges.** À la vraie facturation, le prix par token est le MÊME des 2 côtés
+(même provider Nous, même compte, même modèle deepseek-v4-flash).
+
+**Si on remet les DEUX au même prix réel (~0.001 $/M)** :
+- Hermes : ~67.7k tokens frais → **~0.00007 $** (+ cache/output ≈ 0.0002 $)
+- elixness : ~161k tokens frais → **~0.00016 $** (+ cache/output ≈ 0.0003 $)
+
+→ **Hermes est toujours moins cher qu'elixness sur le coût**, parce qu'il
+émet moins de tokens frais (exploration plus ciblée). Les « ~15x/23x/47x
+moins cher que Hermes » des tableaux précédents étaient des artefacts de
+comparaison estimé-vs-réel — **ils sont à retirer de l'esprit**.
+
+**Ce qui reste VRAI** : le catalogue + guidage divise le coût d'elixness
+par ~30 (0.0092 $ → 0.0003 $) et ses tokens frais par ~4 (577k → 161k). C'est
+un progrès réel d'elixness sur ELIXNESS, pas une victoire contre Hermes.
+Sur le coût, elixness ne bat pas Hermes — Hermes le bat, grâce à son
+exploration plus économe en tokens.
 - Limite connue : le modèle `deepseek-v4-flash` aplatit les traductions sur une
   seule ligne en appel nu (elixness). Via le coding agent Hermes, la structure
   est préservée.
