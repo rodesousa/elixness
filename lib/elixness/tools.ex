@@ -211,7 +211,7 @@ defmodule Elixness.Tools do
         "function" => %{
           "name" => "explore_repo",
           "description" =>
-            "Explore a directory in parallel: the harness scans the files, spawns ONE agent per file to analyze it, and summarizes. Processes EVERY file found (no limit). Use when the user asks what's in a repo / what a codebase does / to find relevant files — do NOT read files one by one yourself, just call this.",
+            "Analyze EVERY file in a directory in depth (one LLM agent per file — EXPENSIVE, ~100x catalog). Use ONLY when the user explicitly asks to process/analyze the whole directory. To find relevant files, call `catalog` first, then read only the relevant ones with read_file — do NOT call explore_repo after catalog.",
           "parameters" => %{
             "type" => "object",
             "properties" => %{

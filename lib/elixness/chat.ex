@@ -184,23 +184,29 @@ defmodule Elixness.Chat do
       guidance() <>
       """
 
-    You have two delegation tools:
+    You have delegation tools:
     - `spawn_agent`: one subagent for ONE independent subtask (a single file,
       a single question).
     - `flatmap`: process a whole directory in parallel — the harness scans,
       spawns ONE agent per file, and collects. Use this when the user asks to
       translate/review/analyze many files. Do NOT explore or count files
       yourself first — just call `flatmap` with the task and path.
-    - `explore_repo`: explore a directory in parallel — the harness scans,
-      spawns ONE agent per file to analyze it, and summarizes. Use when the
-      user asks what's in a repo / what a codebase does / to find relevant
-      files. Do NOT read files one by one — just call `explore_repo`.
     - `catalog`: build a compact ZERO-LLM catalog of a directory (paths +
       symbols + docstrings, ~50-100 tokens per file). Use this FIRST to
-      orient yourself and choose which files matter, THEN read only those.
-      Prefer `catalog` over `explore_repo` when you just need to find
-      relevant files — it costs almost nothing. Use `explore_repo` only when
-      you need a deep per-file analysis of the whole directory.
+      orient yourself and choose which files matter.
+    - `explore_repo`: analyze EVERY file in a directory in depth (one LLM
+      agent per file — EXPENSIVE, ~100x catalog). Use ONLY when the user
+      explicitly asks to process/analyze the whole directory.
+
+    # Exploration — règle de choix (IMPORTANT)
+    To understand a repo / find relevant files: call `catalog` FIRST. It gives
+    you the structure and symbols of every file, almost for free (zero LLM).
+    After `catalog`, read ONLY the relevant files with `read_file` (bounded).
+    Do NOT call `explore_repo` after `catalog` — it spawns one LLM agent per
+    file (~100x the tokens of catalog). Reserve it for when the user
+    explicitly asks to analyze EVERY file (e.g. "traduis tout", "review tout").
+    If you already have the catalog, you have the map. Running explore_repo
+    on top of it wastes tokens.
     Each subagent works in parallel with its own fresh conversation; the
     harness aggregates their usage.
 

@@ -685,6 +685,31 @@ contenu d'explore_repo. Zéro LLM, ~2s pour 1000 fichiers.
   guidance du prompt (catalog → read ciblés, explore_repo réservé au deep
   analysis explicite).
 
+### Test 3e — guidage impératif « catalog → read, PAS explore_repo » (commit, 2026-08-31)
+
+Le levier du 3d appliqué : le system prompt du chat remplace la suggestion
+« prefer catalog » par une **règle impérative** (« Do NOT call explore_repo
+after catalog — it spawns one LLM agent per file, ~100x the tokens ») et la
+description du tool explore_repo est durcie (« EXPENSIVE, ~100x catalog. Use
+ONLY when the user explicitly asks to process the whole directory »).
+
+**Re-test réel (même question, deepseek-harness)** :
+- TRACE : **`catalog: 1, search_files: 4, read_file: 8, glob: 1, terminal: 1`
+  — 0 explore_repo ✅**
+- Le modèle a catalogé le repo (1000 fichiers, zéro LLM), puis lu SEULEMENT
+  les 8 fichiers pertinents (skill/src, skill-filesystem, tool-skill,
+  skill-badge, docs/subsystems/skills.md, cordis.patch.yml, agent.cordis.yml)
+- usage : prompt **719 537 (dont cache_read 599 552 → fresh ~120k)**,
+  completion 5 174, **cost 0.0004 $** — vs 0.0092 $ (3c) et 0.019 $ (Hermes
+  Test 3b) → **~23x moins cher que le 3c, ~47x moins cher que Hermes**
+- temps ~105s, qualité excellente (8 fichiers clés cités, équivalent Hermes)
+
+**Le levier « commande vs suggestion »** (test G) : une règle impérative
+« do NOT call X after Y » est respectée par elixness ; une suggestion
+« prefer » ne l'est pas. Le catalogue + guidance = l'exploration devient
+~5x moins de tokens frais que explore_repo, et le coût chute au dérisoire
+(le catalog est zéro-LLM, les lectures ciblées sont bornées).
+
 ## Notes
 
 - Le token est lu brut depuis auth.json : s'il est expiré, l'API répond 401 et
