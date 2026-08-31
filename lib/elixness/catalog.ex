@@ -121,7 +121,7 @@ defmodule Elixness.Catalog do
 
   defp extract_python(content) do
     doc =
-      case Regex.run(~r/^(?:"""|''')\s*([^"'\\n]{5,120})/m, content) do
+      case Regex.run(~r/^(?:"""|''')\s*([^\n]{5,120})/m, content) do
         [_, text] -> ["doc: #{String.trim(text)}"]
         _ -> []
       end
