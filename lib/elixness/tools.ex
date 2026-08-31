@@ -21,6 +21,7 @@ defmodule Elixness.Tools do
   def execution_mode("flatmap"), do: :exclusive
   def execution_mode("explore_repo"), do: :exclusive
   def execution_mode("catalog"), do: :parallel
+  def execution_mode("catalog_select"), do: :exclusive
   def execution_mode("edit"), do: :exclusive
   def execution_mode("glob"), do: :parallel
   def execution_mode("web_search"), do: :parallel
@@ -187,6 +188,23 @@ defmodule Elixness.Tools do
               "command" => %{"type" => "string", "description" => "The shell command to run"}
             },
             "required" => ["command"]
+          }
+        }
+      },
+      %{
+        "type" => "function",
+        "function" => %{
+          "name" => "catalog_select",
+          "description" =>
+            "Mechanically select which files are relevant to a question: the harness builds a zero-LLM catalog, sends it to ONE subagent call, and returns the list of relevant file paths. Use this FIRST to find which files matter in a repo — then read only those with read_file. Keeps the big catalog OUT of the chat context. Much cheaper than explore_repo.",
+          "parameters" => %{
+            "type" => "object",
+            "properties" => %{
+              "question" => %{"type" => "string", "description" => "The question to find relevant files for"},
+              "path" => %{"type" => "string", "description" => "Directory to catalog (default: cwd)"},
+              "limit" => %{"type" => "integer", "description" => "Max files to catalog (default: all found up to 1000)"}
+            },
+            "required" => ["question"]
           }
         }
       },
@@ -563,6 +581,7 @@ defmodule Elixness.Tools do
     case call.name do
       "spawn_agent" -> execute_spawn(call.arguments, llm, model, system)
       "flatmap" -> execute_flatmap(call.arguments, llm, model, system)
+      "catalog_select" -> execute_catalog_select(call.arguments, llm, model)
       _ -> execute(call)
     end
   end
@@ -587,6 +606,26 @@ defmodule Elixness.Tools do
       )
 
     {:result, Elixness.Flatmap.summarize(result), result.usage}
+  end
+
+  # Le sélecteur mécanique : catalogue (zéro-LLM) → 1 appel LLM (child) avec
+  # le catalogue en contexte → liste des fichiers pertinents. Le child est un
+  # appel LLM pur (pas un loop), son usage est agrégé via {:result, texte, usage}.
+  defp execute_catalog_select(args, llm, model) do
+    %{} = decoded = Jason.decode!(args)
+    question = Map.get(decoded, "question", "")
+    path = Map.get(decoded, "path", File.cwd!())
+    limit = Map.get(decoded, "limit", :all)
+
+    result = Elixness.Catalog.select(llm, model, question, path, limit: limit)
+
+    lines =
+      ["CATALOG_SELECT: #{length(result.selected)} fichiers pertinents sur #{result.count} catalogués (1 appel LLM, catalogue hors contexte chat)."] ++
+        Enum.map(result.selected, &"  + #{&1}")
+
+    text = Enum.join(lines, "\n") <> "\n\nLis les fichiers pertinents ci-dessus avec read_file puis réponds à la question."
+
+    {:result, text, result.usage}
   end
 
   defp execute_spawn(args, llm, model, system) do

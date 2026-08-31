@@ -22,6 +22,17 @@ defmodule Elixness.Catalog do
   @max_files 1000  # garde-fou sur le nombre de fichiers catalogués
   @max_total_symbols 4000  # garde-fou global sur le nombre de lignes du catalogue
 
+  # System prompt du sélecteur : le child qui choisit les fichiers à partir
+  # du catalogue. Court et stable (cache-read) — le catalogue vit dans CE
+  # child, pas dans le chat.
+  @select_system """
+  You are a precise code explorer. A catalog of a repository is given below:
+  one block per file (relative path, line count, size, extracted symbols/docstring).
+  Read the QUESTION, then list the file paths that are RELEVANT to answer it.
+  Return ONLY the relative file paths, one per line, exactly as shown in the catalog.
+  No explanations, no markdown, no code fences. If nothing is relevant, reply exactly: NONE
+  """
+
   @doc """
   Construit le catalogue de `path`.
   - `limit` : nombre max de fichiers (défaut `:all` = tous jusqu'à @max_files).
@@ -37,6 +48,47 @@ defmodule Elixness.Catalog do
     text = render(entries)
 
     %{count: length(entries), files: files, text: text}
+  end
+
+  @doc """
+  Sélection MÉCANIQUE des fichiers pertinents à `question` : construit le
+  catalogue (zéro-LLM), puis fait UN appel LLM avec le catalogue + la question
+  dans le contexte d'un child — le child retourne les chemins pertinents, un
+  par ligne. Le catalogue vit dans CE child (1 appel), PAS dans la
+  conversation du chat (qui ne garde que la liste). Retourne
+  `%{selected: [paths absolus], count:, usage:}`.
+  """
+  def select(llm, model, question, path, opts \\ []) do
+    limit = Keyword.get(opts, :limit, :all)
+    catalog = run(path, limit: limit)
+
+    prompt =
+      "QUESTION: #{question}\n\nCATALOG:\n#{catalog.text}\n\n" <>
+        "List the relevant file paths (one per line, as shown in the catalog). Reply NONE if nothing is relevant."
+
+    messages = [
+      %{role: "system", content: @select_system},
+      %{role: "user", content: prompt}
+    ]
+
+    case Elixness.LLM.chat(llm, model, messages, tools: []) do
+      {:ok, %{content: content, usage: usage}} when content != "" ->
+        selected =
+          content
+          |> String.split("\n", trim: true)
+          |> Enum.map(&String.trim/1)
+          |> Enum.reject(&(&1 == "" or String.upcase(&1) == "NONE"))
+          |> Enum.map(fn p ->
+            if Path.type(p) == :absolute, do: p, else: Path.join(path, p)
+          end)
+          |> Enum.filter(&File.regular?/1)
+          |> Enum.uniq()
+
+        %{selected: selected, count: catalog.count, usage: usage}
+
+      _ ->
+        %{selected: [], count: catalog.count, usage: zero_usage()}
+    end
   end
 
   ## Découverte — rg --files (même backbone qu'explore.ex)
@@ -174,6 +226,11 @@ defmodule Elixness.Catalog do
 
   defp format_size(bytes) when bytes >= 1024, do: "#{Float.round(bytes / 1024, 1)}k"
   defp format_size(bytes), do: "#{bytes}b"
+
+  defp zero_usage do
+    %{"prompt_tokens" => 0, "completion_tokens" => 0, "total_tokens" => 0,
+      "reasoning_tokens" => 0, "cache_read_tokens" => 0, "cost" => 0.0}
+  end
 
   defp sanitize_utf8(binary) do
     case :unicode.characters_to_binary(binary, :utf8, :utf8) do
