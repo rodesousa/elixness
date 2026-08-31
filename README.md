@@ -724,6 +724,28 @@ explore_repo après catalog).
 
 - Le token est lu brut depuis auth.json : s'il est expiré, l'API répond 401 et
   elixness le signale (relancer `hermes` pour rafraîchir).
+
+### ⚠️ Le coût réel (vérifié 2026-08-31) — le 0.0003 $ n'est PAS une erreur
+
+Un run « catalog → read ciblés » (Test 3e/3g) affiche ~0.0003 $ pour 584k
+prompt. Ça paraît dérisoire → vérifié par un test d'appel réel :
+- **Prix réel mesuré** : 1 appel avec 50 589 tokens frais (zéro cache) →
+  `cost = 5e-5 $` (0.00005 $). Soit **~0.001 $/M tokens** (PAS 0.14/0.28 $/M —
+  ce chiffre est le prix public de l'API DeepSeek, pas ce que paie elixness
+  via l'endpoint Nous/compte Hermes). Il y a un **plancher ~5e-5 $/requête**.
+- **Agrégation confirmée** (code) : `Loop.run` somme `usage.cost` à CHAQUE
+  turn (`sum_usage(acc, resp.usage)`, loop.ex:126) ; `explore_repo`/`flatmap`
+  retournent `{:result, texte, usage}` que le loop agrège au parent (fix
+  ddd2736 présent dans le code actuel). Un loop 2 turns → cost = 2 × 5e-5 ✓.
+- **Pourquoi 3e/3g sont si bas** : ces runs n'avaient AUCUN agent interne
+  (trace = catalog/read/glob/search, tous zéro-LLM). Le seul coût = les
+  ~6-7 turns LLM du chat × ~5e-5 ≈ 0.0003 $ ✓. Rien à sommer de plus.
+- **Attention inverse** : un run qui passe par `explore_repo`/`flatmap`
+  (agents internes) coûte BEAUCOUP plus (0.0092 $ au Test 3c = 200 agents ×
+  1 appel). C'est le prix réel de l'analyse en profondeur.
+- Le `cost` renvoyé par l'API est la facturation effective du compte (le
+  champ externe n'est pas indépendamment vérifiable ici, mais les chiffres
+  sont cohérents : nombre de requêtes × plancher).
 - Limite connue : le modèle `deepseek-v4-flash` aplatit les traductions sur une
   seule ligne en appel nu (elixness). Via le coding agent Hermes, la structure
   est préservée.
