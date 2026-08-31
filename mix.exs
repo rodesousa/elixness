@@ -20,7 +20,11 @@ defmodule Elixness.MixProject do
   end
 
   defp escript do
-    [main_module: Elixness.CLI]
+    # +B : désactive le break handler d'OTP (le menu "BREAK: (a)bort
+    # (c)ontinue...") — Ctrl+C (SIGINT) tue alors le process directement,
+    # au lieu d'afficher le menu qui "avale" le Ctrl+C pendant une réponse
+    # longue (le chat ne quitte plus). C'est le comportement attendu d'un CLI.
+    [main_module: Elixness.CLI, emulator_args: ["+B"]]
   end
 
   defp deps do

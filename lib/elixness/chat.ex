@@ -19,6 +19,11 @@ defmodule Elixness.Chat do
       {:ok, _} = Application.ensure_all_started(app)
     end
 
+    # Ctrl+C (SIGINT) : l'option émulateur +B (mix.exs) désactive le break
+    # handler d'OTP → Ctrl+C tue le process au lieu du menu "BREAK: (a)bort".
+    # Au prompt, l'éditeur (mode raw, ISIG off) lit Ctrl+C comme \x03 → :eof.
+    # Pendant la réponse (mode normal), +B fait mourir la VM directement.
+
     case Auth.load() do
       {:ok, auth} ->
         IO.puts("elixness chat — tape ton message, /quit pour sortir, /files pour lister\n")
