@@ -710,6 +710,16 @@ ONLY when the user explicitly asks to process the whole directory »).
 ~5x moins de tokens frais que explore_repo, et le coût chute au dérisoire
 (le catalog est zéro-LLM, les lectures ciblées sont bornées).
 
+**Re-test de confirmation (même question, 2e run monture)** : TRACE
+`catalog: 1, glob: 1, read_file: 6, search_files: 2` — encore **0 explore_repo
+✅**. usage : prompt 584 316 (dont cache_read 423 424 → **fresh ~161k**),
+completion 3 882, **cost 0.0003 $**, ~84s. Réponse propre et structurée
+(registre ctx.skills, providers, tool-skill, cordis.patch.yml, agent-spine-demo),
+fichiers clés cités. Note : un run sur 2-3 peut dérailler (variance du modèle
+— un run avait répondu en allemand sur « min dedge prompt », hors-sujet) ;
+le comportement tools reste lui toujours correct (catalog → read, jamais
+explore_repo après catalog).
+
 ## Notes
 
 - Le token est lu brut depuis auth.json : s'il est expiré, l'API répond 401 et
