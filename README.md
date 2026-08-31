@@ -724,6 +724,31 @@ fichiers clés cités. Note : un run sur 2-3 peut dérailler (variance du modèl
 le comportement tools reste lui toujours correct (catalog → read, jamais
 explore_repo après catalog).
 
+### Test 3h — tool `catalog_select` (agent-catalogue mécanique, commit 39a22e3, 2026-08-31)
+
+Le catalogue (62k) restait dans le contexte du chat à chaque turn (423k
+cache-read au 3g). Fix : **`catalog_select`** — la sélection devient MÉCANIQUE
+: le harness construit le catalogue (zéro-LLM), l'envoie à **1 appel LLM
+child** (le catalogue vit dans le child, hors contexte chat), qui retourne la
+liste des fichiers pertinents. Le chat ne reçoit que la liste, puis lit les
+fichiers avec read_file. Le tool est guidé en PREMIER dans le prompt
+(« USE THIS FIRST »), explore_repo/catalog rétrogradés.
+
+**Test réel (même question)** :
+- TRACE : **`catalog_select: 1, read_file: 11`** — 0 explore_repo, 0 catalog
+- **Contexte chat final : 3 263 tokens** (le catalogue n'est PLUS dans la
+  conversation — il vit dans le child, payé UNE fois ~71k)
+- usage : prompt 175 174 (dont cache_read 43 776 → **fresh ~131k**),
+  completion 5 637, **cost 0.00025 $**
+- ~81s, réponse riche et structurée (registre, providers, catalogue session,
+  intégration Cordis, fichiers clés cités)
+
+**Le gain vs 3g** : le catalogue est sorti du contexte chat →
+**cache_read 423k → 43.7k (~10x moins)** de re-traitement, fresh 161k → 131k,
+cost 0.0003 → 0.00025 $. C'est le pattern « délégation à contexte frais » des
+3 harness (le child porte le gros, le parent reste léger) appliqué à notre
+catalogue unique.
+
 ## Notes
 
 - Le token est lu brut depuis auth.json : s'il est expiré, l'API répond 401 et
