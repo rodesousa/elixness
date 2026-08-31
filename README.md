@@ -749,6 +749,23 @@ cost 0.0003 → 0.00025 $. C'est le pattern « délégation à contexte frais »
 3 harness (le child porte le gros, le parent reste léger) appliqué à notre
 catalogue unique.
 
+### Test 3i — re-test de bout en bout (confirmation, 2026-08-31)
+
+Re-test de catalog_select sur la même question (vérifier que ça marche de bout
+en bout après le commit). TRACE : **`catalog_select: 1, read_file: 12,
+search_files: 4`** — 0 explore_repo. **Le sélecteur a retourné 21 fichiers
+pertinents sur 1000**, dont LE cœur : `packages/skill/skill/src/index.ts`
+(registre ctx.skills), skill-filesystem, tool-skill, skill-badge,
+docs/subsystems/skills.md, puis plugin.ts + vendor/loader. Le chat a lu ces
+fichiers et répondu avec précision (registre layered par scope, providers,
+hot-reload, 8 fichiers clés cités). usage : prompt 338 966 (dont cache_read
+208 384 → fresh ~131k), completion 6 682, **cost 0.0004 $**, ~93s, contexte
+chat final 3 546 tokens. **Conclusion : catalog_select fonctionne — le
+sélecteur a bien pris le cœur, la réponse est de qualité, le catalogue reste
+hors contexte chat.** ⚠️ La variance du sélecteur mono-appel existe (mesurée
+1/3 sur le fichier cœur en vérif ad-hoc) : ce run a bien performé, mais un
+filtre mécanique mots-clés avant le sélecteur LLM est la piste pour la fiabiliser.
+
 ## Notes
 
 - Le token est lu brut depuis auth.json : s'il est expiré, l'API répond 401 et
