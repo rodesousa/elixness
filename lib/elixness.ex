@@ -1,15 +1,15 @@
 defmodule Elixness do
   @moduledoc """
-  Elixness — un premier job de harness : traduire les `@moduledoc` français
-  d'un projet Elixir en anglais, en lançant N agents Jido en parallèle
-  (pattern flatmap : un agent par doc, puis reduce).
+  Elixness — a first harness job: translating the French `@moduledoc`s of an
+  Elixir project into English, by launching N Jido agents in parallel
+  (flatmap pattern: one agent per doc, then reduce).
 
-  Commandes :
+  Commands:
     elixness translate [--limit N] [--dry-run] [--apply] [--model M]
 
-  Lancé depuis la racine du projet cible (ex. `~/git/inductive`), il scanne
-  `lib/**/*.ex`, garde N `@moduledoc` qui sentent le français, les traduit
-  via l'API Nous (token OAuth du compte Hermes dans `~/.hermes/auth.json`),
-  agrège la consommation de tokens, et peut écrire les fichiers (apply).
+  Run from the root of the target project (e.g. `~/git/inductive`), it scans
+  `lib/**/*.ex`, keeps N `@moduledoc`s that look French, translates them via
+  the Nous API (OAuth token of the Hermes account in `~/.hermes/auth.json`),
+  aggregates token consumption, and can write the files (apply).
   """
 end

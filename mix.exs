@@ -12,7 +12,7 @@ defmodule Elixness.MixProject do
     ]
   end
 
-  # Jido a besoin de son app et Req de Finch pour l'HTTP.
+  # Jido needs its app, and Req needs Finch for HTTP.
   def application do
     [
       extra_applications: [:logger, :ssl, :inets, :crypto]

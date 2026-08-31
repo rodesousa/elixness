@@ -1,18 +1,18 @@
 defmodule Elixness.Chat do
   @moduledoc """
-  Le chat elixness — l'interface de conversation (la décision « elixness
-  EST le chat »).
+  The elixness chat — the conversation interface (the "elixness IS the
+  chat" decision).
 
-  Boucle : affiche le flamegraph de contexte → lit ton message → assemble
-  le contexte (system + fichiers + conversation) → envoie au loop →
-  affiche la réponse → répète. Le flamegraph montre ce qui part au LLM
-  AVANT l'envoi (le malloc maîtrisé de context-engineering).
+  Loop: shows the context flamegraph → reads your message → assembles
+  the context (system + files + conversation) → sends it to the loop →
+  shows the reply → repeats. The flamegraph shows what goes to the LLM
+  BEFORE the send (the controlled malloc of context-engineering).
   """
 
   alias Elixness.{Auth, Context, Loop}
 
   @doc """
-  Démarre le chat. `files` : fichiers à mettre en contexte (le dropdown).
+  Starts the chat. `files`: files to put in context (the dropdown).
   """
   def start(files \\ []) do
     for app <- [:jido, :finch, :req, :jason] do
@@ -22,7 +22,7 @@ defmodule Elixness.Chat do
     case Auth.load() do
       {:ok, auth} ->
         IO.puts("elixness chat — tape ton message, /quit pour sortir, /files pour lister\n")
-        loop(auth, files, [])
+        loop(auth, files, [], [])
 
       {:error, reason} ->
         IO.puts("✗ elixness : #{inspect(reason)}")
@@ -30,7 +30,7 @@ defmodule Elixness.Chat do
     end
   end
 
-  defp loop(auth, files, conversation) do
+  defp loop(auth, files, conversation, history) do
     system = system_prompt()
 
     ctx = Context.assemble(system: system, files: files, conversation: conversation, tools: [])
@@ -39,12 +39,12 @@ defmodule Elixness.Chat do
     IO.puts(Context.flamegraph(ctx))
     IO.puts("")
 
-    case IO.gets("> @") do
+    case Elixness.LineEditor.read("> @", history) do
       :eof ->
-        IO.puts("\nbye")
+        IO.puts("bye")
 
       {:error, _} ->
-        IO.puts("\nbye")
+        IO.puts("bye")
 
       input ->
         msg = String.trim(input)
@@ -55,29 +55,30 @@ defmodule Elixness.Chat do
 
           msg == "/files" ->
             Enum.each(files, &IO.puts("  + #{&1}"))
-            loop(auth, files, conversation)
+            loop(auth, files, conversation, history)
 
           msg == "" ->
-            loop(auth, files, conversation)
+            loop(auth, files, conversation, history)
 
           true ->
             conversation = conversation ++ [%{role: "user", content: msg}]
+            history = [msg | history]
 
             case send_and_reply(auth, system, files, conversation) do
               {:ok, reply, conversation} ->
                 IO.puts("\n#{reply}\n")
-                loop(auth, files, conversation)
+                loop(auth, files, conversation, history)
 
               {:error, reason} ->
                 IO.puts("✗ #{inspect(reason)}\n")
-                loop(auth, files, conversation)
+                loop(auth, files, conversation, history)
             end
         end
     end
   end
 
   defp send_and_reply(auth, system, files, conversation) do
-    # La conversation complète : system + fichiers en contexte + historique
+    # The full conversation: system + files in context + history
     file_messages =
       Enum.map(files, fn file ->
         content = if is_map(file), do: Map.get(file, :content, ""), else: file
@@ -86,12 +87,12 @@ defmodule Elixness.Chat do
 
     messages = [%{role: "system", content: system}] ++ file_messages ++ conversation
 
-    # Le chat expose les tools au modèle (dont spawn_agent, flatmap) — il peut déléguer.
-    # Chaque envoi a son trace (observabilité des tool_calls du chat).
+    # The chat exposes the tools to the model (including spawn_agent, flatmap) — it can delegate.
+    # Each send has its own trace (observability of the chat's tool_calls).
     {:ok, trace} = Elixness.Trace.start_link()
 
-    # Streaming : un process qui affiche les tool_calls EN DIRECT (comme
-    # opencode/Hermes). Le loop envoie {:tool_start,...} / {:tool_end,...}.
+    # Streaming: a process that shows the tool_calls LIVE (like
+    # opencode/Hermes). The loop sends {:tool_start,...} / {:tool_end,...}.
     streamer =
       spawn_link(fn -> stream_tools() end)
 
@@ -111,12 +112,12 @@ defmodule Elixness.Chat do
     end
   end
 
-  # Affiche les tool_calls en direct : "[tool] name args → result (durée)"
-  # et les tokens LLM (streaming) : "texte" au fur et à mesure.
-  # `safe_io` : les args/result viennent du LLM et peuvent contenir des
-  # octets UTF-8 invalides (ex. pattern search_files avec accents) qui font
-  # crasher :io.put_chars sur :standard_io — on sanitize avant d'écrire, ET
-  # on rescue (le pattern Hermes) : l'affichage ne doit JAMAIS tuer le chat.
+  # Shows the tool_calls live: "[tool] name args → result (duration)"
+  # and the LLM tokens (streaming): "text" as they come.
+  # `safe_io`: the args/result come from the LLM and may contain invalid
+  # UTF-8 bytes (e.g. a search_files pattern with accents) that crash
+  # :io.put_chars on :standard_io — we sanitize before writing, AND
+  # we rescue (the Hermes pattern): display must NEVER kill the chat.
   defp stream_tools do
     receive do
       {:tool_start, name, args} ->
@@ -147,12 +148,12 @@ defmodule Elixness.Chat do
       :puts -> IO.puts(safe)
     end
   rescue
-    # Filet de sécurité (pattern Hermes _cprint) : un octet qui échapperait
-    # à la sanitisation ne doit pas tuer le streamer ni le chat.
+    # Safety net (Hermes _cprint pattern): a byte that would escape
+    # sanitization must not kill the streamer or the chat.
     _ -> :ok
   end
 
-  # Remplace les octets invalides par U+FFFD (même helper que Tools).
+  # Replaces invalid bytes with U+FFFD (same helper as Tools).
   defp sanitize_utf8(binary) do
     case :unicode.characters_to_binary(binary, :utf8, :utf8) do
       {:error, converted, _} -> converted
@@ -160,8 +161,8 @@ defmodule Elixness.Chat do
     end
   end
 
-  # Le system prompt du chat : assistant de conversation (pas un traducteur
-  # de docstrings). Résumé et direct, cohérent avec la page context-engineering.
+  # The chat's system prompt: conversational assistant (not a docstring
+  # translator). Concise and direct, consistent with the context-engineering page.
   defp system_prompt do
     cwd = File.cwd!()
 
@@ -224,9 +225,9 @@ defmodule Elixness.Chat do
     """
   end
 
-  # Les règles de comportement (guidance) — copiées de Hermes (prompt_builder.py)
-  # et adaptées à elixness. Le bloc Execution discipline s'applique à DeepSeek
-  # (les évals de Hermes l'ont montré) — c'est notre modèle.
+  # The behavior rules (guidance) — copied from Hermes (prompt_builder.py)
+  # and adapted to elixness. The Execution discipline block applies to DeepSeek
+  # (Hermes' evals showed this) — it's our model.
   defp guidance do
     """
     # Parallel tool calls
@@ -302,7 +303,7 @@ defmodule Elixness.Chat do
     end
   end
 
-  # Affiche le coût en $ lisible (ex. "0.00152" ou "5.0e-5" → "0.00005").
+  # Shows the readable cost in $ (e.g. "0.00152" or "5.0e-5" → "0.00005").
   defp format_cost(nil), do: "?"
   defp format_cost(cost), do: :erlang.float_to_binary(cost, [:compact, decimals: 6])
 end

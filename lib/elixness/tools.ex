@@ -1,18 +1,18 @@
 defmodule Elixness.Tools do
   @moduledoc """
-  Le registre d'outils d'elixness — le « plateau » du harness.
+  The elixness tool registry — the harness's "board".
 
-  Chaque outil a un schema OpenAI (`schemas/0`, envoyé au modèle) et un
-  executor (`execute/1`, appelé par le loop quand le modèle décide de
-  l'utiliser). Test G : on reproduit les outils que les agents Hermes
-  utilisent réellement (read_file, write_file, search_files).
+  Each tool has an OpenAI schema (`schemas/0`, sent to the model) and an
+  executor (`execute/1`, called by the loop when the model decides to use
+  it). Test G: we reproduce the tools that Hermes agents actually use
+  (read_file, write_file, search_files).
   """
 
   @doc """
-  Le mode d'exécution de chaque tool — le `executionMode` de deepseek.
-  `:parallel` : peut tourner en même temps que d'autres calls (read-only).
-  `:exclusive` : barrière — attend que les calls en vol se vident
-  (write avec side-effects, spawn qui modifie l'état).
+  The execution mode of each tool — deepseek's `executionMode`.
+  `:parallel`: may run at the same time as other calls (read-only).
+  `:exclusive`: barrier — waits for in-flight calls to drain
+  (write with side-effects, spawn that modifies state).
   """
   def execution_mode("read_file"), do: :parallel
   def execution_mode("search_files"), do: :parallel
@@ -245,18 +245,18 @@ defmodule Elixness.Tools do
   end
 
   @doc """
-  Exécute un tool_call `%{id, name, arguments}` (arguments = string JSON).
-  Retourne le contenu du résultat (ce que le loop renvoie au modèle).
+  Executes a tool_call `%{id, name, arguments}` (arguments = JSON string).
+  Returns the result content (what the loop sends back to the model).
   """
   def execute(%{name: "read_file", arguments: args}) do
     %{} = decoded = Jason.decode!(args)
-    # Le modèle peut utiliser `path` (schema elixness) ou `file` (nom Hermes)
+    # The model can use `path` (elixness schema) or `file` (Hermes name)
     path = Map.get(decoded, "path") || Map.get(decoded, "file")
     offset = Map.get(decoded, "offset", 1)
     limit = Map.get(decoded, "limit", 2000)
 
     cond do
-      # Un dossier → liste les entrées (pattern opencode).
+      # A directory → list the entries (opencode pattern).
       File.dir?(path) ->
         entries =
           path
@@ -273,7 +273,7 @@ defmodule Elixness.Tools do
       File.regular?(path) ->
         case File.read(path) do
           {:ok, content} ->
-            # Borné comme deepseek : lignes numérotées + footer de pagination.
+            # Bounded like deepseek: numbered lines + pagination footer.
             lines = String.split(content, "\n")
             total = length(lines)
             start_line = max(offset, 1)
@@ -322,8 +322,8 @@ defmodule Elixness.Tools do
     include = Map.get(decoded, "include")
     limit = Map.get(decoded, "limit", 100)
 
-    # Moteur ripgrep (pattern opencode) : rapide, respecte .gitignore, saute
-    # les binaires. Format de sortie groupé par fichier, truncation à `limit`.
+    # ripgrep engine (opencode pattern): fast, respects .gitignore, skips
+    # binaries. Output format grouped by file, truncated at `limit`.
     args =
       ["--line-number", "--no-heading", "-m", Integer.to_string(limit), pattern, path] ++
         if(include, do: ["-g", include], else: [])
@@ -382,7 +382,7 @@ defmodule Elixness.Tools do
     query = Map.get(decoded, "query", "")
     limit = Map.get(decoded, "limit", 5)
 
-    # Backend de recherche : DuckDuckGo HTML (gratuit, sans clé).
+    # Search backend: DuckDuckGo HTML (free, no API key).
     url = "https://html.duckduckgo.com/html/?q=" <> URI.encode_www_form(query)
 
     case Req.get(url, headers: [{"user-agent", "elixness-agent"}]) do
@@ -408,7 +408,7 @@ defmodule Elixness.Tools do
 
     case Req.get(url, headers: [{"user-agent", "elixness-agent"}]) do
       {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
-        # Extrait le texte lisible (grossier : retire les balises HTML).
+        # Extracts the readable text (crude: strips HTML tags).
         text =
           body
           |> String.replace(~r/<script[\s\S]*?<\/script>/i, " ")
@@ -451,8 +451,8 @@ defmodule Elixness.Tools do
     %{} = decoded = Jason.decode!(args)
     question = Map.get(decoded, "question", "")
     path = Map.get(decoded, "path", ".")
-    # Pas de plafond par défaut : explore TOUS les fichiers découverts.
-    # `limit` n'est utilisé que si le modèle le précise explicitement.
+    # No cap by default: explore ALL discovered files.
+    # `limit` is only used if the model explicitly specifies it.
     limit = Map.get(decoded, "limit", :all)
 
     result = Elixness.Explore.run(path, question, limit: limit)
@@ -470,19 +470,19 @@ defmodule Elixness.Tools do
             "cost=#{result.usage["cost"]}"
         ]
 
-    # Retourne le TUPLE {:result, texte, usage} (comme flatmap) pour que le
-    # loop agrège le coût des agents internes au parent — sinon la conso de
-    # l'explore_repo est invisible dans le usage final du chat.
+    # Returns the TUPLE {:result, text, usage} (like flatmap) so that the
+    # loop aggregates the cost of internal agents to the parent — otherwise
+    # the explore_repo consumption is invisible in the final chat usage.
     {:result, Enum.join(lines, "\n") <> "\n\n" <> result.summary, result.usage}
   end
 
   def execute(%{name: name}), do: "ERROR: unknown tool #{name}"
 
-  # Formate la sortie rg comme opencode : "Found N matches" + groupé par fichier.
+  # Formats the rg output like opencode: "Found N matches" + grouped by file.
   defp format_rg_results(out, limit) do
     lines = out |> String.split("\n", trim: true)
 
-    # Les lignes rg : "path:line:text" — on groupe par fichier.
+    # rg lines: "path:line:text" — group by file.
     rows =
       lines
       |> Enum.map(fn line ->
@@ -524,9 +524,9 @@ defmodule Elixness.Tools do
     |> Enum.join("\n")
   end
 
-  # Parse les résultats de DuckDuckGo HTML (liens .result__a).
+  # Parses DuckDuckGo HTML results (.result__a links).
   defp parse_ddg_results(body) do
-    # Les liens de résultat ont class="result__a" et href="//duckduckgo.com/l/?uddg=<encodé>"
+    # Result links have class="result__a" and href="//duckduckgo.com/l/?uddg=<encoded>"
     title_re = ~r/class="result__a"[^>]*>(.*?)<\/a>/
     href_re = ~r/class="result__a"[^>]*href="([^"]*)"/
     snip_re = ~r/class="result__snippet"[^>]*>(.*?)<\/a>/
@@ -554,7 +554,7 @@ defmodule Elixness.Tools do
     |> String.replace(~r/<[^>]+>/, "")
   end
 
-  # L'URL DuckDuckGo est https://duckduckgo.com/l/?uddg=<url encodée> — on extrait le vrai lien.
+  # The DuckDuckGo URL is https://duckduckgo.com/l/?uddg=<encoded url> — we extract the real link.
   defp decode_ddg_url(href) do
     case URI.decode_query(String.trim_leading(href, "//duckduckgo.com/l/?")["uddg"] || "") do
       "" -> href
@@ -564,7 +564,7 @@ defmodule Elixness.Tools do
     _ -> href
   end
 
-  # Remplace les octets invalides par U+FFFD.
+  # Replaces invalid bytes with U+FFFD.
   defp sanitize_utf8(binary) do
     case :unicode.characters_to_binary(binary, :utf8, :utf8) do
       {:error, converted, _} -> converted
@@ -573,9 +573,9 @@ defmodule Elixness.Tools do
   end
 
   @doc """
-  Exécute un tool_call `%{id, name, arguments}` avec l'état du loop
-  (llm/model/system — nécessaire pour spawn_agent). Les tools simples
-  (read/write/search) délèguent à `execute/1`.
+  Executes a tool_call `%{id, name, arguments}` with the loop state
+  (llm/model/system — needed for spawn_agent). Simple tools
+  (read/write/search) delegate to `execute/1`.
   """
   def execute(call, %{llm: llm, model: model, system: system}) do
     case call.name do
@@ -588,10 +588,10 @@ defmodule Elixness.Tools do
 
   def execute(%{name: name}, _state), do: "ERROR: unknown tool #{name}"
 
-  # Le flatmap mécanique : Discover → spawn 1 agent/fichier → collecte.
-  # Retourne le résumé que le modèle voit (pas l'historique des agents).
-  # Pas de plafond par défaut : `limit` n'est utilisé que si le modèle le
-  # précise explicitement (sinon :all = tous les fichiers découverts).
+  # The mechanical flatmap: Discover → spawn 1 agent/file → collect.
+  # Returns the summary the model sees (not the agents' history).
+  # No cap by default: `limit` is only used if the model explicitly
+  # specifies it (otherwise :all = all discovered files).
   defp execute_flatmap(args, _llm, model, system) do
     %{} = decoded = Jason.decode!(args)
     task = Map.get(decoded, "task", "")
@@ -608,9 +608,9 @@ defmodule Elixness.Tools do
     {:result, Elixness.Flatmap.summarize(result), result.usage}
   end
 
-  # Le sélecteur mécanique : catalogue (zéro-LLM) → 1 appel LLM (child) avec
-  # le catalogue en contexte → liste des fichiers pertinents. Le child est un
-  # appel LLM pur (pas un loop), son usage est agrégé via {:result, texte, usage}.
+  # The mechanical selector: catalog (zero-LLM) → 1 LLM call (child) with
+  # the catalog in context → list of relevant files. The child is a pure
+  # LLM call (not a loop), its usage is aggregated via {:result, text, usage}.
   defp execute_catalog_select(args, llm, model) do
     %{} = decoded = Jason.decode!(args)
     question = Map.get(decoded, "question", "")
@@ -633,9 +633,9 @@ defmodule Elixness.Tools do
     prompt = Map.get(decoded, "prompt", "")
     model = Map.get(decoded, "model") || model
 
-    # Le child a sa propre conversation (system + prompt), zéro historique
-    # parent — ET une inbox (pour le steering + l'annulation). Il est
-    # enregistré dans le ChildRegistry sous un UUID (l'identité de session).
+    # The child has its own conversation (system + prompt), zero parent
+    # history — AND an inbox (for steering + cancellation). It is
+    # registered in the ChildRegistry under a UUID (the session identity).
     child_id = "child-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
     {:ok, inbox} = Elixness.Inbox.start_link()
 

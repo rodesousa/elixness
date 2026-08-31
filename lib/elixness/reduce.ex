@@ -1,8 +1,8 @@
 defmodule Elixness.Reduce do
   @moduledoc """
-  Étape reduce : collecte les fiches des agents map, agrège les tokens et
-  mesure le gain de parallélisme (temps mural vs somme des latences — un
-  proxy de ce qu'aurait coûté l'exécution séquentielle, sans l'appeler).
+  Reduce step: collects the results of the map agents, aggregates the tokens and
+  measures the parallelism gain (wall time vs sum of latencies — a
+  proxy of what the sequential execution would have cost, without naming it).
   """
 
   def run(results, started_mono) do

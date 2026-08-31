@@ -1,11 +1,11 @@
 import Config
 
-# Instance Jido — le pool d'agents est passé au démarrage (run-time),
-# pas ici : il dépend du token Hermes lu depuis auth.json.
+# Jido instance — the agent pool is passed at startup (run-time),
+# not here: it depends on the Hermes token read from auth.json.
 config :elixness, Elixness.Jido,
   max_tasks: 1000,
   agent_pools: []
 
-# Le timeout d'exécution d'une action (appel LLM) : le défaut de jido_action
-# est 30s, trop court pour un appel LLM. Aligné sur call_timeout du CLI.
+# Execution timeout of an action (LLM call): jido_action's default is 30s,
+# too short for an LLM call. Aligned with the CLI's call_timeout.
 config :jido_action, default_timeout: 120_000

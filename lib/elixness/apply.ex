@@ -1,16 +1,16 @@
 defmodule Elixness.Apply do
   @moduledoc """
-  Écrit les traductions validées dans les fichiers sources.
+  Writes the validated translations into the source files.
 
-  Remplacement ligne-par-ligne guidé par l'AST (line + delimiter) : on
-  remplace le bloc `@moduledoc """..."""` (ou la ligne `@moduledoc "..."`)
-  par le même bloc en anglais. Les jobs d'un même fichier sont appliqués de
-  bas en haut pour que les numéros de ligne restent valides.
+  Line-by-line replacement guided by the AST (line + delimiter): it
+  replaces the `@moduledoc """..."""` block (or the `@moduledoc "..."` line)
+  with the same block in English. Jobs for the same file are applied from
+  bottom to top so that line numbers remain valid.
   """
 
   @doc """
-  Applique une liste de `%{file, line, delimiter, en}`.
-  Retourne la liste des fichiers modifiés.
+  Applies a list of `%{file, line, delimiter, en}`.
+  Returns the list of modified files.
   """
   def write(jobs) do
     jobs
@@ -25,8 +25,8 @@ defmodule Elixness.Apply do
   end
 
   @doc """
-  Remplace le bloc `@moduledoc` d'un contenu de fichier (d'après `line` et
-  `delimiter` du job) par la version anglaise `en`.
+  Replaces the `@moduledoc` block of a file's content (based on the job's
+  `line` and `delimiter`) with the English version `en`.
   """
   def replace(content, %{line: line, delimiter: ~S("""), en: en}) do
     lines = String.split(content, "\n")

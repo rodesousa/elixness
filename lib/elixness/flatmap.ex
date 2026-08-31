@@ -1,32 +1,32 @@
 defmodule Elixness.Flatmap do
   @moduledoc """
-  Le flatmap mécanique — le loop de Huntley rendu automatique.
+  The mechanical flatmap — the Huntley loop made automatic.
 
-  `run/4` : Discover (scanne le dossier, identifie les jobs) → spawn UN agent
-  par fichier (Task.async parallèle) → collecte les résultats → retourne un
-  résumé (traductions + usage agrégé). Le modèle appelle le tool `flatmap`
-  UNE fois ; le harness orchestre à sa place.
+  `run/4` : Discover (scans the folder, identifies the jobs) → spawn ONE
+  agent per file (parallel Task.async) → collects the results → returns a
+  summary (translations + aggregated usage). The model calls the `flatmap`
+  tool ONCE; the harness orchestrates in its place.
 
-  C'est la réponse à l'échec de l'orchestration par le modèle (les 2 tests
-  chat : 0 agent spawné, saturation en exploration). Ici, pas de modèle au
-  milieu : la mécanique Discover → pool → Reduce.
+  This is the answer to the failure of model-driven orchestration (the 2
+  chat tests: 0 agents spawned, saturation in exploration). Here, no model
+  in the middle: the Discover → pool → Reduce mechanics.
   """
 
   alias Elixness.{Auth, Discover, Loop}
 
   @doc """
-  Lance le flatmap sur `root`.
-  - `limit` : nombre max de jobs (fichiers) à traiter.
-  - `task` : l'instruction donnée à chaque agent (ex. « traduis le moduledoc »).
-  - `mode: :loop` (défaut) : chaque agent fait son loop (read → LLM → write).
-  - `mode: :direct` : UN appel LLM par agent — le contenu est passé
-    directement (le Discover l'a déjà lu), le modèle traduit, le harness
-    écrit le résultat. ~3x moins de requêtes → plus rapide.
-  - Retourne `%{ok:, errors:, usage:, count:, files:, traces:}` où `count` = nb d'agents lancés.
+  Runs the flatmap on `root`.
+  - `limit` : max number of jobs (files) to process.
+  - `task` : the instruction given to each agent (e.g. "translate the moduledoc").
+  - `mode: :loop` (default) : each agent does its loop (read → LLM → write).
+  - `mode: :direct` : ONE LLM call per agent — the content is passed
+    directly (Discover already read it), the model translates, the harness
+    writes the result. ~3x fewer requests → faster.
+  - Returns `%{ok:, errors:, usage:, count:, files:, traces:}` where `count` = number of agents spawned.
   """
   def run(root, task, opts \\ []) do
-    # Pas de plafond par défaut : le flatmap traite TOUS les fichiers
-    # découverts (l'utilisateur peut préciser limit pour borner).
+    # No cap by default: the flatmap processes ALL discovered files
+    # (the user can specify limit to bound it).
     limit = Keyword.get(opts, :limit, :all)
     mode = Keyword.get(opts, :mode, :loop)
     model = Keyword.get(opts, :model) || Elixness.LLM.default_model()
@@ -36,15 +36,15 @@ defmodule Elixness.Flatmap do
 
     jobs = Discover.scan(root, limit: if(limit == :all, do: 10_000, else: limit))
 
-    # spawn UN agent par fichier (le flatmap) — parallèle, éphémère.
-    # Concurrence BORNÉE : tout en parallèle (max(length(jobs),1)) sature le
-    # pool Finch sur un gros dossier. On traite TOUS les fichiers avec un
-    # nombre de connexions limité (même pattern que explore_repo).
+    # spawn ONE agent per file (the flatmap) — parallel, ephemeral.
+    # BOUNDED concurrency: running everything in parallel (max(length(jobs),1))
+    # saturates the Finch pool on a large folder. We process ALL files with a
+    # limited number of connections (same pattern as explore_repo).
     results =
       jobs
       |> Task.async_stream(
         fn job ->
-          # Chaque agent a son propre trace (observabilité par fichier).
+          # Each agent has its own trace (per-file observability).
           {:ok, trace} = Elixness.Trace.start_link()
 
           r =
@@ -83,11 +83,11 @@ defmodule Elixness.Flatmap do
     }
   end
 
-  @doc "Résumé texte compact du flatmap (ce que le modèle voit)."
+  @doc "Compact text summary of the flatmap (what the model sees)."
   def summarize(%{ok: oks, errors: errs, usage: usage, count: count, files: files, traces: _traces}) do
     lines = ["FLATMAP RESULT: #{count} agents lancés (#{length(oks)} OK, #{length(errs)} erreurs)."]
 
-    # Compact : les fichiers traités + un extrait court de chaque résultat.
+    # Compact: the processed files + a short excerpt of each result.
     lines =
       lines ++
         (files
@@ -102,7 +102,7 @@ defmodule Elixness.Flatmap do
           "  ✗ #{inspect(err)}"
         end)
 
-    # Le git diff mécanique (pattern opencode) : les fichiers modifiés.
+    # The mechanical git diff (opencode pattern): the modified files.
     lines =
       lines ++
         ["", "CHANGED FILES (git diff --name-only):"] ++
@@ -123,9 +123,9 @@ defmodule Elixness.Flatmap do
     "#{task}\n\nFile: #{job.file}\nContent:\n#{String.slice(job.text, 0, 4000)}"
   end
 
-  # Mode :direct — UN appel LLM par agent. Le contenu est passé directement
-  # (le Discover l'a déjà lu), le modèle fait la tâche, le harness écrit le
-  # résultat dans le fichier. ~3x moins de requêtes que le mode :loop.
+  # :direct mode — ONE LLM call per agent. The content is passed directly
+  # (Discover already read it), the model does the task, the harness writes
+  # the result to the file. ~3x fewer requests than :loop mode.
   defp run_direct(auth, model, system, task, job) do
     prompt =
       "#{task}\n\nFile: #{job.file}\n\nFull file content:\n#{String.slice(job.text, 0, 12_000)}\n\n" <>
@@ -140,7 +140,7 @@ defmodule Elixness.Flatmap do
 
     case Elixness.LLM.chat(auth, model, messages, tools: []) do
       {:ok, %{content: content, usage: usage}} when content != "" ->
-        # Le harness écrit le fichier complet modifié (mode direct : 1 appel/agent).
+        # The harness writes the complete modified file (direct mode: 1 call/agent).
         File.write!(job.file, content)
         {:ok, content, %{usage: usage}}
 
@@ -152,8 +152,8 @@ defmodule Elixness.Flatmap do
     end
   end
 
-  # Les fichiers modifiés par le flatmap (git diff --name-only) — le pattern
-  # opencode : le système montre ce qui a changé, le modèle ne re-scane pas.
+  # Files modified by the flatmap (git diff --name-only) — the opencode
+  # pattern: the system shows what changed, the model does not re-scan.
   defp git_diff_name_only do
     case System.cmd("git", ["diff", "--name-only"], stderr_to_stdout: true) do
       {out, 0} ->

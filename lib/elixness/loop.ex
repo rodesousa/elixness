@@ -1,22 +1,23 @@
 defmodule Elixness.Loop do
   @moduledoc """
-  Le moteur du harness — l'agent loop (test G, amélioré par les patterns
-  d'opencode — test H).
+  The harness engine — the agent loop (test G, improved by the opencode
+  patterns — test H).
 
-  Boucle : LLM → si tool_calls, exécute chaque tool et rejoue avec les
-  résultats → sinon, réponse finale. C'est le « every response must make
-  progress » du system prompt Hermes, rendu mécanique : le modèle décide à
-  chaque turn (appeler un outil ou répondre), le loop exécute sa décision.
+  Loop: LLM → if tool_calls, execute each tool and replay with the
+  results → otherwise, final answer. It's the "every response must make
+  progress" of the Hermes system prompt, made mechanical: the model
+  decides at each turn (call a tool or answer), the loop executes its
+  decision.
 
-  Améliorations empruntées à opencode (`session/prompt.ts`) :
-  1. Sortie par `finish_reason` : on ne sort que si le finish n'est pas
-     "tool_calls" ET qu'il n'y a plus de tool_calls en attente.
-  2. MAX_STEPS_PROMPT : à la limite d'itérations, on injecte un message qui
-     force le modèle à résumer et arrêter (pas un échec sec).
-  3. Condition de sortie complète : le dernier assistant doit être rattaché
-     au dernier message (évite les sorties sur messages orphelins).
+  Improvements borrowed from opencode (`session/prompt.ts`):
+  1. Exit by `finish_reason`: we only exit if the finish is not
+     "tool_calls" AND there are no more pending tool_calls.
+  2. MAX_STEPS_PROMPT: at the iteration limit, we inject a message that
+     forces the model to summarize and stop (not a hard failure).
+  3. Complete exit condition: the last assistant must be attached
+     to the last message (avoids exits on orphan messages).
 
-  Agrège l'usage (prompt/completion/reasoning/cost) sur tous les turns.
+  Aggregates usage (prompt/completion/reasoning/cost) across all turns.
   """
 
   @max_iterations 8
@@ -39,25 +40,25 @@ defmodule Elixness.Loop do
   """
 
   @doc """
-  Lance le loop. Retourne `{:ok, content, %{usage: usage, turns: n}}` où
-  content est la réponse finale du modèle, ou `{:error, raison}`.
+  Runs the loop. Returns `{:ok, content, %{usage: usage, turns: n}}` where
+  content is the model's final response, or `{:error, reason}`.
 
-  Options (keyword list) :
-  - `tools` : les tool schemas exposés (défaut `Elixness.Tools.schemas()`).
-  - `inbox` : pid d'un `Elixness.Inbox` — le loop draine à chaque turn
-    (steering : injecter des messages en cours de travail).
-  - `messages` : liste complète de messages (ex. conversation d'un chat).
-    Par défaut construit `[system, user_task]`.
-  - `trace` : pid d'un `Elixness.Trace` — journalise chaque tool_call
-    exécuté (time, args, résultat, durée). L'observabilité du harness.
+  Options (keyword list):
+  - `tools`: the exposed tool schemas (default `Elixness.Tools.schemas()`).
+  - `inbox`: pid of an `Elixness.Inbox` — the loop drains it at each turn
+    (steering: inject messages while working).
+  - `messages`: full list of messages (e.g. a chat conversation).
+    By default builds `[system, user_task]`.
+  - `trace`: pid of an `Elixness.Trace` — logs each executed tool_call
+    (time, args, result, duration). The harness's observability.
   """
   def run(llm, model, system, user_task, opts \\ []) do
     tools = Keyword.get(opts, :tools, Elixness.Tools.schemas())
     inbox = Keyword.get(opts, :inbox)
     messages = Keyword.get(opts, :messages)
     trace = Keyword.get(opts, :trace)
-    # `emit` : pid qui reçoit les événements tools en DIRECT ({:tool_start, name, args}
-    # avant, {:tool_end, name, result, duration_ms} après) — le streaming.
+    # `emit`: pid that receives tool events in REALTIME ({:tool_start, name, args}
+    # before, {:tool_end, name, result, duration_ms} after) — the streaming.
     emit = Keyword.get(opts, :emit)
 
     messages =
@@ -70,12 +71,12 @@ defmodule Elixness.Loop do
     loop(messages, llm, model, tools, 0, zero_usage(), inbox, trace, emit)
   end
 
-  ## Boucle
+  ## Loop
 
   defp loop(messages, llm, model, _tools, iter, acc, _inbox, _trace, emit) when iter >= @max_iterations do
-    # MAX_STEPS_PROMPT (opencode) : au lieu d'échouer sec, on force le
-    # modèle à résumer et arrêter. Tools non fournis → il ne peut que
-    # répondre en texte.
+    # MAX_STEPS_PROMPT (opencode): instead of failing hard, we force the
+    # model to summarize and stop. Tools not provided → it can only
+    # respond in text.
     case Elixness.LLM.chat(llm, model, messages ++ [%{role: "user", content: @max_steps_prompt}], emit: emit) do
       {:ok, %{content: content, usage: usage}} ->
         {:ok, content, %{usage: sum_usage(acc, usage), turns: iter + 1}}
@@ -86,22 +87,22 @@ defmodule Elixness.Loop do
   end
 
   defp loop(messages, llm, model, tools, iter, acc, inbox, trace, emit) do
-    # Drain l'inbox : les messages en attente sont ajoutés à la conversation.
+    # Drains the inbox: pending messages are added to the conversation.
     messages = drain_inbox(messages, inbox)
 
     case Elixness.LLM.chat(llm, model, messages, tools: tools, emit: emit) do
       {:ok, %{content: content, tool_calls: calls, finish_reason: finish} = resp} ->
-        # opencode : ne sort que si finish ≠ "tool_calls" ET pas de calls en attente
+        # opencode: only exits if finish ≠ "tool_calls" AND no pending calls
         if calls == [] and finish != "tool_calls" do
           {:ok, content, %{usage: sum_usage(acc, resp.usage), turns: iter + 1}}
         else
-          # L'état du parent (llm/model/system) — nécessaire pour le tool
-          # spawn_agent qui lance un child avec sa propre conversation.
+          # The parent state (llm/model/system) — needed for the tool
+          # spawn_agent which launches a child with its own conversation.
           tool_state = %{llm: llm, model: model, system: get_system(messages)}
 
-          # Le executionMode de deepseek : les tool_calls :parallel partent
-          # ensemble (Task.async_stream), les :exclusive forment une barrière
-          # et attendent que le groupe parallèle se vide (write, side-effects).
+          # The deepseek executionMode: parallel tool_calls start
+          # together (Task.async_stream), exclusive ones form a barrier
+          # and wait for the parallel group to empty (write, side-effects).
           {results, child_usage} = execute_calls(calls, tool_state, trace, emit)
 
           assistant_msg = %{
@@ -135,10 +136,10 @@ defmodule Elixness.Loop do
     end
   end
 
-  # Exécute les tool_calls en respectant le executionMode (deepseek).
-  # Groupe les :parallel ensemble (concurrence), les :exclusive en barrière.
-  # Les résultats sont réordonnés selon l'ordre ORIGINAL des calls (l'API
-  # OpenAI exige tool results dans le même ordre que les tool_calls).
+  # Executes the tool_calls respecting the executionMode (deepseek).
+  # Groups :parallel together (concurrency), :exclusive as a barrier.
+  # Results are reordered according to the ORIGINAL order of the calls (the
+  # OpenAI API requires tool results in the same order as the tool_calls).
   defp execute_calls(calls, tool_state, trace, emit) do
     {parallel, exclusive} =
       Enum.split_with(calls, fn c -> Elixness.Tools.execution_mode(c.name) == :parallel end)
@@ -146,14 +147,14 @@ defmodule Elixness.Loop do
     {p_results, p_usage} = run_parallel(parallel, tool_state, 10, trace, emit)
     {e_results, e_usage} = run_parallel(exclusive, tool_state, 1, trace, emit)
 
-    # Réordonne par id de call original pour respecter l'ordre du modèle.
+    # Reorders by original call id to respect the model's order.
     by_id = Map.new(p_results ++ e_results, fn %{tool_call_id: id} = r -> {id, r} end)
     results = Enum.map(calls, fn c -> Map.fetch!(by_id, c.id) end)
 
     {results, sum_usage(p_usage, e_usage)}
   end
 
-  # Lance un groupe de calls en parallèle (max_concurrency borné).
+  # Runs a group of calls in parallel (bounded max_concurrency).
   defp run_parallel([], _tool_state, _max, _trace, _emit), do: {[], zero_usage()}
 
   defp run_parallel(calls, tool_state, max, trace, emit) do
@@ -161,12 +162,12 @@ defmodule Elixness.Loop do
       calls
       |> Task.async_stream(
         fn call ->
-          # Streaming : émet le début du tool en DIRECT (si un pid emit est fourni).
+          # Streaming: emits the tool start in REALTIME (if an emit pid is provided).
           if emit do
             send(emit, {:tool_start, call.name, truncate(call.arguments, 120)})
           end
 
-          # Traçage : on mesure la durée et on journalise (args tronqués).
+          # Tracing: we measure the duration and log it (truncated args).
           started = System.monotonic_time(:millisecond)
           content = Elixness.Tools.execute(call, tool_state)
           duration = System.monotonic_time(:millisecond) - started
@@ -189,20 +190,20 @@ defmodule Elixness.Loop do
           content
         end,
         max_concurrency: max,
-        # PAS de timeout — les 3 harness attendent indéfiniment que les
-        # sous-agents finissent (opencode raceFirst, deepseek 0 timeout).
+        # NO timeout — the 3 harnesses wait indefinitely for the
+        # sub-agents to finish (opencode raceFirst, deepseek 0 timeout).
         timeout: :infinity,
-        # on_stream_timeout: :kill_task — un enfant qui dépasse (si on
-        # remet un timeout un jour) est tué sans tuer le parent.
+        # on_stream_timeout: :kill_task — a child that exceeds (if we
+        # ever re-add a timeout) is killed without killing the parent.
         on_timeout: :kill_task,
         ordered: true
       )
       |> Enum.zip(calls)
       |> Enum.map_reduce(zero_usage(), fn
-        # Cas normal : le tool a retourné un résultat.
+        # Normal case: the tool returned a result.
         {{:ok, content}, call}, acc ->
-          # Le spawn retourne {:result, contenu, usage_child} — on agrège
-          # l'usage du child au parent (la conso de TOUS les agents).
+          # The spawn returns {:result, content, child_usage} — we aggregate
+          # the child's usage into the parent (the consumption of ALL agents).
           case content do
             {:result, text, usage} ->
               {%{role: "tool", tool_call_id: call.id, content: text}, sum_usage(acc, usage)}
@@ -211,12 +212,12 @@ defmodule Elixness.Loop do
               {%{role: "tool", tool_call_id: call.id, content: content}, acc}
           end
 
-        # Un enfant a crashé (exception) — on ne tue PAS le parent, on
-        # renvoie l'erreur au modèle dans le résultat du tool.
+        # A child crashed (exception) — we do NOT kill the parent, we
+        # send the error back to the model in the tool result.
         {{:exit, reason}, call}, acc ->
           {%{role: "tool", tool_call_id: call.id, content: "TOOL ERROR: #{inspect(reason)}"}, acc}
 
-        # Un enfant a timeouté (si un timeout est configuré un jour).
+        # A child timed out (if a timeout is ever configured).
         {{:error, reason}, call}, acc ->
           {%{role: "tool", tool_call_id: call.id, content: "TOOL ERROR (timeout): #{inspect(reason)}"}, acc}
       end)

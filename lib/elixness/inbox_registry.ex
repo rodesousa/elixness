@@ -1,29 +1,30 @@
 defmodule Elixness.InboxRegistry do
   @moduledoc """
-  Le registre des inbox actives — l'annuaire des boîtes aux lettres.
+  The registry of active inboxes — the directory of mailboxes.
 
-  Associe `fichier → pid de l'inbox` pour chaque job en cours, via un
-  `Registry` (un ETS avec cycle de vie géré : le job qui meurt voit son
-  entrée disparaître automatiquement). C'est ce qui permet le steering
-  externe : `elixness steer <fichier> <message>` retrouve l'inbox d'un job
-  en cours et y dépose un message, que le loop draine au turn suivant.
+  Associates `file → inbox pid` for each running job, via a
+  `Registry` (an ETS with a managed lifecycle: when a job dies, its
+  entry disappears automatically). This is what enables external
+  steering: `elixness steer <file> <message>` finds the inbox of a
+  running job and drops a message into it, which the loop drains at the
+  next turn.
   """
 
   @registry :elixness_inboxes
 
-  @doc "Démarre le Registry (à appeler au boot du CLI)."
+  @doc "Starts the Registry (to be called at CLI boot)."
   def start_link do
     Registry.start_link(keys: :unique, name: @registry)
   end
 
-  @doc "Enregistre l'inbox d'un job, keyée par fichier. Retourne `:ok`."
+  @doc "Registers a job's inbox, keyed by file. Returns `:ok`."
   def register(file, inbox_pid) do
-    # Registry.register retourne {:ok, pid} (pas :ok) — on normalise.
+    # Registry.register returns {:ok, pid} (not :ok) — we normalize.
     {:ok, _} = Registry.register(@registry, file, inbox_pid)
     :ok
   end
 
-  @doc "Retrouve l'inbox d'un fichier. `{:ok, pid}` ou `:error`."
+  @doc "Finds a file's inbox. `{:ok, pid}` or `:error`."
   def lookup(file) do
     case Registry.lookup(@registry, file) do
       [{_, pid}] -> {:ok, pid}
@@ -31,7 +32,7 @@ defmodule Elixness.InboxRegistry do
     end
   end
 
-  @doc "Liste les jobs en cours : `[{fichier, pid}]`."
+  @doc "Lists running jobs: `[{file, pid}]`."
   def list do
     Registry.select(@registry, [{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$3"}}]}])
   end

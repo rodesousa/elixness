@@ -1,18 +1,18 @@
 defmodule Elixness.LLM do
   @moduledoc """
-  Appel LLM OpenAI-compatible (POST `/chat/completions`) via Req — le même
-  protocole que l'adapter `Inductive.Adapters.LLM.ReqLLM`. Le backend est de
-  la configuration : endpoint Nous (compte Hermes) par défaut, modèle
-  surchargeable via `ELIXNESS_MODEL`.
+  OpenAI-compatible LLM call (POST `/chat/completions`) via Req — the same
+  protocol as the `Inductive.Adapters.LLM.ReqLLM` adapter. The backend is
+  configuration-driven: Nous endpoint (Hermes account) by default, model
+  overridable via `ELIXNESS_MODEL`.
   """
 
   @model_env "ELIXNESS_MODEL"
   @default_model "deepseek/deepseek-v4-flash"
 
-  # L'instruction riche du harness — le prefix des agents internes (flatmap,
-  # explore). Inspiré de la guidance Hermes/opencode : un prefix RICHE et
-  # byte-stable active le cache-read du fournisseur (test E : ÷100 de coût).
-  # Le focus : tâche précise, edits ciblés, pas de rescan, batch des tools.
+  # The harness's rich instruction — the prefix of the internal agents (flatmap,
+  # explore). Inspired by the Hermes/opencode guidance: a RICH and byte-stable
+  # prefix activates the provider's read-cache (test E: ÷100 of cost).
+  # The focus: precise task, targeted edits, no rescan, batched tools.
   @instruction """
   You are elixness, a coding agent working on a file.
 
@@ -72,24 +72,24 @@ defmodule Elixness.LLM do
   def instruction, do: @instruction
 
   @doc """
-  Appel chat générique : `messages` (liste de maps role/content) + `tools`
-  optionnels (schemas OpenAI). Retourne `{:ok, response}` où response est
-  `%{content, tool_calls, usage, reasoning}` — `tool_calls` est une liste de
-  `%{id, name, arguments}` (arguments = string JSON).
+  Generic chat call: `messages` (list of role/content maps) + optional `tools`
+  (OpenAI schemas). Returns `{:ok, response}` where response is
+  `%{content, tool_calls, usage, reasoning}` — `tool_calls` is a list of
+  `%{id, name, arguments}` (arguments = JSON string).
   """
   def chat(%{token: token, base_url: base_url}, model, messages, opts \\ []) do
     tools = Keyword.get(opts, :tools, [])
-    # Streaming SSE (pattern des 3 harness) : on reçoit les tokens au fur et
-    # à mesure. `emit` (optionnel) : pid qui reçoit {:token, texte} en direct.
+    # SSE streaming (pattern of the 3 harnesses): we receive tokens as they
+    # arrive. `emit` (optional): pid that receives {:token, text} in real time.
     emit = Keyword.get(opts, :emit)
 
     body = %{model: model, messages: messages, stream: true}
     body = if tools != [], do: Map.put(body, "tools", tools), else: body
 
-    # `into:` (Req) : la fonction reçoit `{request, response}` comme
-    # accumulateur — on ne peut PAS retourner notre map seule (Req lève une
-    # CaseClauseError à la fin du stream). On stocke donc l'état SSE dans
-    # `response.private[:sse]` et on re-thread le tuple {request, response}.
+    # `into:` (Req): the function receives `{request, response}` as the
+    # accumulator — we CANNOT return our map alone (Req raises a
+    # CaseClauseError at the end of the stream). So we store the SSE state in
+    # `response.private[:sse]` and re-thread the {request, response} tuple.
     into = fn
       {:data, data}, {req, resp} when is_binary(data) ->
         acc = Req.Response.get_private(resp, :sse) || new_acc()
@@ -107,7 +107,7 @@ defmodule Elixness.LLM do
            into: into
          ) do
       {:ok, %Req.Response{status: 200} = resp} ->
-        # L'état SSE accumulé pendant le stream est dans resp.private.
+        # The SSE state accumulated during the stream is in resp.private.
         assemble_stream(Req.Response.get_private(resp, :sse), emit)
 
       {:ok, %Req.Response{status: status, body: body}} ->
@@ -124,12 +124,12 @@ defmodule Elixness.LLM do
     %{content: [], tool_calls: %{}, order: [], usage: nil, finish: nil, reasoning: [], buffer: ""}
   end
 
-  # Accumule les deltas SSE. Chaque `data:` est un JSON chat.completion.chunk.
-  # `buffer` : garde la ligne incomplète entre deux chunks réseau (un
-  # événement `data:` peut être coupé en plein milieu par le découpage TCP).
+  # Accumulates SSE deltas. Each `data:` is a chat.completion.chunk JSON.
+  # `buffer`: keeps the incomplete line between two network chunks (a
+  # `data:` event can be cut right in the middle by TCP segmentation).
   defp collect_sse(data, acc, emit) do
-    # Concatène le buffer résiduel + les nouvelles données, puis ne traite
-    # que les lignes complètes (terminées par \n). Le reste reste en buffer.
+    # Concatenates the residual buffer + the new data, then only processes
+    # complete lines (ending with \n). The rest stays in the buffer.
     {lines, leftover} = split_lines(acc.buffer <> data)
 
     acc =
@@ -153,7 +153,7 @@ defmodule Elixness.LLM do
     acc
   end
 
-  # Sépare un buffer SSE en lignes complètes + le résidu incomplet.
+  # Splits an SSE buffer into complete lines + the incomplete remainder.
   # Ex: "a\nb\nc" → {["a", "b"], "c"} ; "a\nb\n" → {["a", "b"], ""}.
   defp split_lines(bin) do
     case :binary.split(bin, "\n", [:global]) do
@@ -164,7 +164,7 @@ defmodule Elixness.LLM do
   end
 
   defp apply_chunk(chunk, acc, emit) do
-    # Usage dans le dernier chunk
+    # Usage in the last chunk
     acc = if chunk["usage"], do: %{acc | usage: chunk["usage"]}, else: acc
 
     case get_in(chunk, ["choices", Access.at(0)]) do
@@ -176,7 +176,7 @@ defmodule Elixness.LLM do
 
         delta = choice["delta"] || %{}
 
-        # Contenu
+        # Content
         acc =
           if is_binary(content = delta["content"]) and content != "" do
             if emit, do: send(emit, {:token, content})
@@ -193,7 +193,7 @@ defmodule Elixness.LLM do
             acc
           end
 
-        # Tool calls (indexés par leur id/index)
+        # Tool calls (indexed by their id/index)
         acc =
           Enum.reduce(delta["tool_calls"] || [], acc, fn tc, acc ->
             idx = tc["index"] || 0
@@ -210,15 +210,15 @@ defmodule Elixness.LLM do
     end
   end
 
-  # Assemble le résultat final depuis les deltas accumulés.
+  # Assembles the final result from the accumulated deltas.
   defp assemble_stream(nil, _emit), do: {:error, {:empty_stream, nil}}
 
   defp assemble_stream(acc, _emit) do
     if acc.content == [] and acc.tool_calls == %{} do
       {:error, {:empty_stream, acc}}
     else
-      # Déjà sous la forme attendue par le loop : %{id, name, arguments}
-      # (atom keys) — PAS de re-parse via string keys (ça nillerait tout).
+      # Already in the form expected by the loop: %{id, name, arguments}
+      # (atom keys) — NO re-parse via string keys (that would null everything).
       tool_calls =
         acc.order
         |> Enum.map(fn idx -> Map.get(acc.tool_calls, idx) end)
@@ -243,11 +243,11 @@ defmodule Elixness.LLM do
   defp normalize_usage(usage) do
     reasoning_tokens = get_in(usage, ["completion_tokens_details", "reasoning_tokens"]) || 0
 
-    # Cache-read (pattern des 3 harness) : le provider DeepSeek fait du prefix
-    # caching AUTOMATIQUE (aucun marqueur à envoyer) — on mesure les tokens
-    # relus en cache pour comptabiliser le vrai coût. Deux conventions wire :
-    # `prompt_tokens_details.cached_tokens` (OpenAI) ou `prompt_cache_hit_tokens`
-    # (natif DeepSeek).
+    # Cache-read (pattern of the 3 harnesses): the DeepSeek provider does
+    # AUTOMATIC prefix caching (no marker to send) — we measure the tokens
+    # re-read from cache to account for the real cost. Two wire conventions:
+    # `prompt_tokens_details.cached_tokens` (OpenAI) or `prompt_cache_hit_tokens`
+    # (native DeepSeek).
     cache_read =
       get_in(usage, ["prompt_tokens_details", "cached_tokens"]) ||
         usage["prompt_cache_hit_tokens"] ||

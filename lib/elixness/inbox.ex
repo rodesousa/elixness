@@ -1,18 +1,18 @@
 defmodule Elixness.Inbox do
   @moduledoc """
-  L'inbox du harness — le pattern next-turn/next-step de deepseek-harness,
-  porté sur Elixir/Jido.
+  The harness inbox — the next-turn/next-step pattern from deepseek-harness,
+  ported to Elixir/Jido.
 
-  Un GenServer dédié par agent (léger) tient la file de messages en attente.
-  Le loop (`Elixness.Loop`) draine la file à chaque turn ; n'importe qui peut
-  déposer un message entre les turns sans bloquer.
+  A dedicated (lightweight) GenServer per agent holds the queue of pending messages.
+  The loop (`Elixness.Loop`) drains the queue at each turn; anyone can
+  drop a message between turns without blocking.
 
-  API (sémantique deepseek) :
-  - `followup(pid, msg)` : ajoute au prochain turn, réveille le loop.
-  - `steer(pid, msg)` : ajoute au prochain step, réveille le loop.
-  - `inject(pid, msg)` : ajoute au prochain step, SANS réveiller (le message
-    attend que le loop soit réveillé par autre chose).
-  - `drain(pid)` : retire tous les messages en attente (le loop les traite).
+  API (deepseek semantics):
+  - `followup(pid, msg)`: adds to the next turn, wakes the loop.
+  - `steer(pid, msg)`: adds to the next step, wakes the loop.
+  - `inject(pid, msg)`: adds to the next step WITHOUT waking (the message
+    waits for the loop to be woken by something else).
+  - `drain(pid)`: removes all pending messages (the loop processes them).
   """
 
   use GenServer
@@ -23,27 +23,27 @@ defmodule Elixness.Inbox do
     GenServer.start_link(__MODULE__, %{queue: :queue.new()}, opts)
   end
 
-  @doc "Ajoute au prochain turn et réveille le loop."
+  @doc "Adds to the next turn and wakes the loop."
   def followup(pid, msg) do
     GenServer.call(pid, {:push, msg, :turn})
   end
 
-  @doc "Ajoute au prochain step et réveille le loop."
+  @doc "Adds to the next step and wakes the loop."
   def steer(pid, msg) do
     GenServer.call(pid, {:push, msg, :step})
   end
 
-  @doc "Ajoute au prochain step SANS réveiller."
+  @doc "Adds to the next step WITHOUT waking."
   def inject(pid, msg) do
     GenServer.call(pid, {:push, msg, :inject})
   end
 
-  @doc "Retire tous les messages en attente. Retourne la liste."
+  @doc "Removes all pending messages. Returns the list."
   def drain(pid) do
     GenServer.call(pid, :drain)
   end
 
-  @doc "Nombre de messages en attente."
+  @doc "Number of pending messages."
   def size(pid) do
     GenServer.call(pid, :size)
   end
@@ -55,7 +55,7 @@ defmodule Elixness.Inbox do
 
   @impl true
   def handle_call({:push, msg, kind}, _from, %{queue: q} = state) do
-    # L'inject ne réveille pas : on le marque (le loop le voit au drain).
+    # Inject does not wake: it is marked (the loop sees it at drain).
     {:reply, :ok, %{state | queue: :queue.in({msg, kind}, q)}}
   end
 

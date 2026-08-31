@@ -1,10 +1,10 @@
 defmodule Elixness.Auth do
   @moduledoc """
-  Lit les identifiants Nous (OAuth du compte Hermes) depuis
-  `~/.hermes/auth.json` — le fichier que `hermes` maintient au login.
+  Reads the Nous credentials (OAuth of the Hermes account) from
+  `~/.hermes/auth.json` — the file that `hermes` maintains at login.
 
-  Surchargeable via `ELIXNESS_AUTH_PATH`. Ne lit que la structure
-  `providers.nous` (access_token + inference_base_url).
+  Overridable via `ELIXNESS_AUTH_PATH`. Only reads the `providers.nous`
+  structure (access_token + inference_base_url).
   """
 
   @default_path Path.join(System.user_home(), ".hermes/auth.json")
@@ -12,8 +12,8 @@ defmodule Elixness.Auth do
   def default_path, do: @default_path
 
   @doc """
-  Retourne `{:ok, %{token: token, base_url: base_url, path: path}}`
-  ou `{:error, raison}`.
+  Returns `{:ok, %{token: token, base_url: base_url, path: path}}`
+  or `{:error, reason}`.
   """
   def load do
     path = System.get_env("ELIXNESS_AUTH_PATH") || @default_path

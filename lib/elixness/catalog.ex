@@ -1,30 +1,30 @@
 defmodule Elixness.Catalog do
   @moduledoc """
-  Le catalogue mécanique d'un repo — la table des matières.
+  The mechanical catalog of a repo — the table of contents.
 
-  Zéro LLM : scanne les fichiers (`rg --files`) et extrait leurs ancres par
-  regex selon le langage (module/def pour Elixir, export/class/function pour
-  TS, def/class pour Python, titres pour Markdown) + le moduledoc de tête.
+  Zero LLM: scans the files (`rg --files`) and extracts their anchors by
+  regex according to language (module/def for Elixir, export/class/function
+  for TS, def/class for Python, headings for Markdown) + the leading moduledoc.
 
-  Le modèle reçoit un bloc compact (~10-20k tokens pour 200 fichiers) et
-  choisit QUOI LIRE au lieu d'analyser chaque fichier avec 1 appel LLM
-  (le 666k tokens de explore_repo). C'est le pattern « chercher d'abord,
-  lire ensuite » des 3 harness, en une passe mécanique.
+  The model receives a compact block (~10-20k tokens for 200 files) and
+  chooses WHAT TO READ instead of analyzing each file with 1 LLM call
+  (explore_repo's 666k tokens). It's the « search first, read later »
+  pattern of the 3 harnesses, in a single mechanical pass.
   """
 
-  # Extensions reconnues par famille.
+  # Recognized extensions by family.
   @elixir_ext [".ex", ".exs"]
   @ts_ext [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"]
   @py_ext [".py"]
   @md_ext [".md", ".mdx"]
 
-  @max_symbols 12  # ancres max par fichier
-  @max_files 1000  # garde-fou sur le nombre de fichiers catalogués
-  @max_total_symbols 4000  # garde-fou global sur le nombre de lignes du catalogue
+  @max_symbols 12  # max anchors per file
+  @max_files 1000  # safeguard on the number of cataloged files
+  @max_total_symbols 4000  # global safeguard on the number of catalog lines
 
-  # System prompt du sélecteur : le child qui choisit les fichiers à partir
-  # du catalogue. Court et stable (cache-read) — le catalogue vit dans CE
-  # child, pas dans le chat.
+  # Selector system prompt: the child that picks the files from the catalog.
+  # Short and stable (cache-read) — the catalog lives in THIS child, not in
+  # the chat.
   @select_system """
   You are a precise code explorer. A catalog of a repository is given below:
   one block per file (relative path, line count, size, extracted symbols/docstring).
@@ -34,9 +34,9 @@ defmodule Elixness.Catalog do
   """
 
   @doc """
-  Construit le catalogue de `path`.
-  - `limit` : nombre max de fichiers (défaut `:all` = tous jusqu'à @max_files).
-  Retourne `%{count:, files:, text:}` où `text` est le catalogue compact.
+  Builds the catalog of `path`.
+  - `limit`: max number of files (default `:all` = all up to @max_files).
+  Returns `%{count:, files:, text:}` where `text` is the compact catalog.
   """
   def run(path, opts \\ []) do
     limit = Keyword.get(opts, :limit, :all)
@@ -51,12 +51,11 @@ defmodule Elixness.Catalog do
   end
 
   @doc """
-  Sélection MÉCANIQUE des fichiers pertinents à `question` : construit le
-  catalogue (zéro-LLM), puis fait UN appel LLM avec le catalogue + la question
-  dans le contexte d'un child — le child retourne les chemins pertinents, un
-  par ligne. Le catalogue vit dans CE child (1 appel), PAS dans la
-  conversation du chat (qui ne garde que la liste). Retourne
-  `%{selected: [paths absolus], count:, usage:}`.
+  MECHANICAL selection of files relevant to `question`: builds the catalog
+  (zero-LLM), then makes ONE LLM call with the catalog + the question in a
+  child's context — the child returns the relevant paths, one per line. The
+  catalog lives in THIS child (1 call), NOT in the chat conversation (which
+  only keeps the list). Returns `%{selected: [absolute paths], count:, usage:}`.
   """
   def select(llm, model, question, path, opts \\ []) do
     limit = Keyword.get(opts, :limit, :all)
@@ -91,10 +90,10 @@ defmodule Elixness.Catalog do
     end
   end
 
-  ## Découverte — rg --files (même backbone qu'explore.ex)
+  ## Discovery — rg --files (same backbone as explore.ex)
 
   defp discover_files(path) do
-    # Extensions SANS le point pour le glob (avec point dans {..} rg échoue).
+    # Extensions WITHOUT the dot for the glob (with a dot in {..} rg fails).
     exts = (@elixir_ext ++ @ts_ext ++ @py_ext ++ @md_ext) |> Enum.map(&String.trim_leading(&1, ".")) |> Enum.join(",")
     glob = "*.{#{exts}}"
 
@@ -104,7 +103,7 @@ defmodule Elixness.Catalog do
     end
   end
 
-  ## Extraction par fichier
+  ## Per-file extraction
 
   defp extract(file, root) do
     content =
@@ -131,7 +130,7 @@ defmodule Elixness.Catalog do
   defp extract_symbols(content, ext) when ext in @md_ext, do: extract_md(content)
   defp extract_symbols(_content, _ext), do: []
 
-  ## Extracteurs par famille (regex légères, pas de LSP)
+  ## Extractors by family (light regexes, no LSP)
 
   defp extract_elixir(content) do
     moduledoc =
@@ -148,8 +147,8 @@ defmodule Elixness.Catalog do
     moduledoc ++ mods ++ defs ++ specs ++ types
   end
 
-  # def/defp avec ou sans arité — le groupe optional `(\/\d+)?` peut donner
-  # 3 ou 4 captures selon qu'il participe ou pas.
+  # def/defp with or without arity — the optional `(\/\d+)?` group can yield
+  # 3 or 4 captures depending on whether it participates.
   defp extract_defs(content) do
     Regex.scan(~r/^\s*def(p)?\s+([a-zA-Z_][\w!?]*)(\/\d+)?/m, content)
     |> Enum.map(fn
@@ -194,12 +193,12 @@ defmodule Elixness.Catalog do
 
   ## Helpers
 
-  # scan simple : extrait le groupe 1 de chaque match et le préfixe `label`.
+  # simple scan: extracts group 1 of each match and prefixes `label`.
   defp scan(content, re, label) when is_binary(label) do
     Regex.scan(re, content) |> Enum.map(fn [_full, g1] -> "#{label} #{String.trim(g1)}" end)
   end
 
-  ## Rendu — le texte compact que le modèle voit
+  ## Rendering — the compact text the model sees
 
   defp render(entries) do
     header = "CATALOG (zero-LLM, #{length(entries)} fichiers):"
@@ -213,7 +212,7 @@ defmodule Elixness.Catalog do
 
     all = [header | body]
 
-    # Garde-fou global : on ne renvoie jamais un catalogue énorme au modèle.
+    # Global safeguard: we never send an enormous catalog to the model.
     if total_symbols(entries) > @max_total_symbols do
       all ++ ["", "(catalogue tronqué — #{@max_total_symbols} ancres max. Réduis le périmètre ou lis un sous-dossier.)"]
     else

@@ -1,14 +1,14 @@
 defmodule Elixness.ChildRegistry do
   @moduledoc """
-  L'annuaire des enfants actifs — un `Agent` (état = map `child_id => %{child:, inbox:}`).
+  The directory of active children — an `Agent` (state = map `child_id => %{child:, inbox:}`).
 
-  C'est l'annuaire (qui est où) complémentaire de l'Inbox (la boîte).
-  - `register` : enregistre un enfant spawné avec son inbox.
-  - `lookup` : retrouve les pids d'un enfant.
-  - `cancel` : tue un enfant proprement (`Process.exit(:shutdown)` — le
-    pattern AbortController de deepseek, porté sur le BEAM).
-  - `steer` : envoie une instruction à l'enfant via son inbox (le pattern
-    next-step de deepseek).
+  It's the directory (who is where) complementary to the Inbox (the mailbox).
+  - `register`: registers a spawned child with its inbox.
+  - `lookup`: finds a child's pids.
+  - `cancel`: kills a child cleanly (`Process.exit(:shutdown)` — deepseek's
+    AbortController pattern, ported to the BEAM).
+  - `steer`: sends an instruction to a child via its inbox (deepseek's
+    next-step pattern).
   """
 
   use Agent
@@ -21,12 +21,12 @@ defmodule Elixness.ChildRegistry do
     Agent.start_link(fn -> %{} end, opts)
   end
 
-  @doc "Enregistre un enfant sous `child_id`. Retourne `:ok`."
+  @doc "Registers a child under `child_id`. Returns `:ok`."
   def register(registry, child_id, %{child: child, inbox: inbox}) do
     Agent.update(registry, &Map.put(&1, child_id, %{child: child, inbox: inbox}))
   end
 
-  @doc "Retrouve un enfant. `{:ok, %{child:, inbox:}}` ou `:error`."
+  @doc "Finds a child. `{:ok, %{child:, inbox:}}` or `:error`."
   def lookup(registry, child_id) do
     case Agent.get(registry, &Map.get(&1, child_id)) do
       nil -> :error
@@ -34,14 +34,14 @@ defmodule Elixness.ChildRegistry do
     end
   end
 
-  @doc "Liste les enfants actifs : `[{child_id, %{child:, inbox:}}]`."
+  @doc "Lists active children: `[{child_id, %{child:, inbox:}}]`."
   def list(registry) do
     Agent.get(registry, &Map.to_list/1)
   end
 
   @doc """
-  Tue un enfant proprement (`Process.exit(:shutdown)` — les blocs `after`
-  s'exécutent). Retourne `:ok` ou `{:error, :not_found}`.
+  Kills a child cleanly (`Process.exit(:shutdown)` — `after` blocks run).
+  Returns `:ok` or `{:error, :not_found}`.
   """
   def cancel(registry, child_id) do
     case Agent.get_and_update(registry, fn children ->
@@ -57,8 +57,8 @@ defmodule Elixness.ChildRegistry do
   end
 
   @doc """
-  Envoie une instruction à un enfant via son inbox (le steering deepseek).
-  Retourne `:ok` ou `{:error, :not_found}`.
+  Sends an instruction to a child via its inbox (deepseek steering).
+  Returns `:ok` or `{:error, :not_found}`.
   """
   def steer(registry, child_id, message) do
     case lookup(registry, child_id) do

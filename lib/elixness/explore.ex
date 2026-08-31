@@ -1,32 +1,32 @@
 defmodule Elixness.Explore do
   @moduledoc """
-  L'exploration mécanique d'un repo — `explore_repo`.
+  Mechanical exploration of a repo — `explore_repo`.
 
-  Le pattern Huntley complet : **rg/glob (découverte) → flatmap (spawn UN agent
-  par fichier qui analyse) → reduce (résumé agrégé)**.
+  The full Huntley pattern: **rg/glob (discovery) → flatmap (spawn ONE agent
+  per file that analyzes it) → reduce (aggregated summary)**.
 
-  Le modèle appelle `explore_repo(path)` UNE fois au lieu de lire fichier par
-  fichier (le problème observé : 21 read_file / 176k prompt pour « quels sont
-  les tools d'opencode ? »). Ici le harness :
-  1. liste les fichiers candidats (rg/glob, rapide, .gitignore respecté)
-  2. spawn UN agent par fichier qui extrait les points clés (moduledoc,
-     définitions, TODO — ce qui est pertinent pour la question)
-  3. collecte et résume → le modèle reçoit un résumé structuré en 1 appel.
+  The model calls `explore_repo(path)` ONCE instead of reading file by file
+  (the observed problem: 21 read_file / 176k prompt for "what are the tools
+  of opencode?"). Here the harness:
+  1. lists the candidate files (rg/glob, fast, .gitignore respected)
+  2. spawns ONE agent per file that extracts the key points (moduledoc,
+     definitions, TODO — whatever is relevant to the question)
+  3. collects and summarizes → the model receives a structured summary in 1 call.
   """
 
   alias Elixness.{Auth, LLM}
 
-  # Garde-fou budget : on ne lance JAMAIS 1 agent LLM par fichier si la liste
-  # pertinente est énorme — le coût en tokens exploserait. Au-delà de ce seuil
-  # on coupe (le modèle peut passer un limit explicite pour borner davantage,
-  # ou réduire le périmètre d'abord).
+  # Budget guard: we NEVER launch 1 LLM agent per file if the relevant list
+  # is huge — the token cost would explode. Beyond this threshold we cut
+  # (the model can pass an explicit limit to bound further,
+  # or reduce the scope first).
   @max_analyze 200
 
   @doc """
-  Explore `path` avec la question `question`.
-  - `limit` : nombre max de fichiers à analyser (défaut `:all` = illimité).
-  - Retourne `%{ok:, errors:, usage:, count:, files:, summary:}` où `summary`
-    est le résumé texte concaténé (ce que le modèle voit).
+  Explore `path` with the question `question`.
+  - `limit`: max number of files to analyze (default `:all` = unlimited).
+  - Returns `%{ok:, errors:, usage:, count:, files:, summary:}` where `summary`
+    is the concatenated text summary (what the model sees).
   """
   def run(path, question, opts \\ []) do
     limit = Keyword.get(opts, :limit, :all)
@@ -37,17 +37,17 @@ defmodule Elixness.Explore do
 
     files = discover_files(path, limit)
 
-    # Garde-fou budget (leçon des 3 harness : le runtime borne, pas le modèle) :
-    # on ne lance JAMAIS 1 agent LLM par fichier si la liste est énorme — le
-    # coût exploserait. Au-delà du seuil, on coupe (le modèle peut passer un
-    # limit explicite pour borner davantage, ou réduire le périmètre d'abord).
+    # Budget guard (lesson from the 3 harnesses: the runtime bounds, not the model):
+    # we NEVER launch 1 LLM agent per file if the list is huge — the
+    # cost would explode. Beyond the threshold, we cut (the model can pass an
+    # explicit limit to bound further, or reduce the scope first).
     files = if length(files) > @max_analyze, do: Enum.take(files, @max_analyze), else: files
 
-    # flatmap : spawn UN agent par fichier qui analyse (mode :direct — 1 appel
-    # LLM par fichier, le contenu est passé directement par le harness).
-    # Concurrence BORNÉE : tout en parallèle (max(length(files),1)) sature le
-    # pool Finch avec un grand repo (ex. 8780 fichiers → "excess queuing").
-    # On traite TOUS les fichiers mais avec un nombre de connexions limité.
+    # flatmap: spawn ONE agent per file that analyzes it (mode :direct — 1 LLM
+    # call per file, the content is passed directly by the harness).
+    # BOUNDED concurrency: everything in parallel (max(length(files),1)) saturates
+    # the Finch pool with a large repo (e.g. 8780 files → "excess queuing").
+    # We process ALL files but with a limited number of connections.
     results =
       files
       |> Task.async_stream(
@@ -82,17 +82,17 @@ defmodule Elixness.Explore do
     }
   end
 
-  ## Découverte (rg/glob — le harness trouve les fichiers)
+  ## Discovery (rg/glob — the harness finds the files)
 
-  # Liste les fichiers du repo. Leçon des 3 harness (deepseek/opencode/Hermes) :
-  # personne ne pré-filtre les fichiers par pertinence — c'est le modèle qui
-  # réduit le périmètre avec ses tools (search_files/glob) avant de déléguer.
-  # Le rôle du harness est de BORNER (garde-fou budget + concurrency), pas de
-  # décider quoi analyser. `limit` borne la liste (défaut :all = tous).
+  # Lists the files in the repo. Lesson from the 3 harnesses (deepseek/opencode/Hermes):
+  # nobody pre-filters the files by relevance — it's the model that
+  # reduces the scope with its tools (search_files/glob) before delegating.
+  # The harness's role is to BOUND (budget guard + concurrency), not to
+  # decide what to analyze. `limit` bounds the list (default :all = all).
   defp discover_files(path, limit) do
     take = if limit == :all, do: 10_000, else: limit
 
-    # rg --files respecte .gitignore et saute les binaires — le backbone recommandé.
+    # rg --files respects .gitignore and skips binaries — the recommended backbone.
     case System.cmd("rg", ["--files", "-g", "*.{ex,exs,ts,tsx,js,py,md}", path], stderr_to_stdout: true) do
       {out, 0} ->
         out
@@ -100,14 +100,14 @@ defmodule Elixness.Explore do
         |> Enum.take(take)
 
       _ ->
-        # fallback glob si rg absent
+        # glob fallback if rg is missing
         Path.join(path, "**/*.{ex,exs,ts,tsx,js,py,md}")
         |> Path.wildcard()
         |> Enum.take(take)
     end
   end
 
-  ## flatmap : UN appel LLM par fichier (le contenu est déjà lu par le harness)
+  ## flatmap: ONE LLM call per file (the content is already read by the harness)
 
   defp analyze_file(auth, model, system, question, file) do
     content =

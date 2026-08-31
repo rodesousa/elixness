@@ -1,23 +1,23 @@
 defmodule Elixness.CLI do
   @moduledoc """
-  Point d'entrée de l'escript `elixness`.
+  Entry point for the `elixness` escript.
 
       elixness chat [--files f1,f2] [--system chemin]
       elixness help
 
-  Le chat est la surface du harness : conversation + tools + délégation.
+  The chat is the harness surface: conversation + tools + delegation.
   """
 
   def main(args) do
-    # Démarre les apps dont dépendent l'HTTP (Req/Finch), JSON et Jido.
+    # Starts the apps that HTTP (Req/Finch), JSON, and Jido depend on.
     for app <- [:jido, :finch, :req, :jason] do
       {:ok, _} = Application.ensure_all_started(app)
     end
 
-    # Le Registry des inbox (l'annuaire fichier→inbox) — la fondation du chat.
+    # The inbox Registry (the file→inbox directory) — the foundation of the chat.
     {:ok, _} = Elixness.InboxRegistry.start_link()
 
-    # L'annuaire des enfants actifs (Agent) — pour le steering + l'annulation.
+    # The directory of active children (Agent) — for steering + cancellation.
     {:ok, _} = Elixness.ChildRegistry.start_link(name: Elixness.ChildRegistry)
 
     args
@@ -71,14 +71,14 @@ defmodule Elixness.CLI do
 
   defp usage do
     """
-    elixness — le harness : un agent de conversation avec outils.
+    elixness — the harness: a conversational agent with tools.
 
       elixness chat [--files f1,f2] [--system chemin]
       elixness help
 
-    chat : conversation interactive avec flamegraph de contexte (le malloc visible),
-    tools (read/write/edit/glob/search/web/terminal) + délégation (flatmap, explore_repo).
-    LLM : endpoint Nous (compte Hermes, ~/.hermes/auth.json), modèle #{Elixness.LLM.default_model()}.
+    chat: interactive conversation with context flamegraph (the visible malloc),
+    tools (read/write/edit/glob/search/web/terminal) + delegation (flatmap, explore_repo).
+    LLM: Nous endpoint (Hermes account, ~/.hermes/auth.json), model #{Elixness.LLM.default_model()}.
     """
   end
 end

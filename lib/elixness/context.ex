@@ -1,26 +1,26 @@
 defmodule Elixness.Context do
   @moduledoc """
-  La transparence du malloc — assemble ce qui part au LLM et compte les
-  tokens par section (le flamegraph de context-engineering, rendu vivant).
+  The malloc transparency — assembles what goes to the LLM and counts the
+  tokens per section (the context-engineering flamegraph, brought to life).
 
-  Sections typiques d'un envoi :
-  - `:system` : le system prompt (harness + instructions)
-  - `:files` : les fichiers sélectionnés en contexte (le dropdown du chat)
-  - `:conversation` : les messages échangés
-  - `:tools` : les tool schemas
+  Typical sections of a request:
+  - `:system` : the system prompt (harness + instructions)
+  - `:files` : the files selected into context (the chat dropdown)
+  - `:conversation` : the exchanged messages
+  - `:tools` : the tool schemas
 
-  `estimate/1` donne l'estimation AVANT l'envoi (chars / 4) ; le loop
-  rapporte l'usage réel APRÈS (champs `usage` de l'API). La différence
-  estimé vs réel est la leçon de l'expérience elixness (A vs C).
+  `estimate/1` gives the estimate BEFORE sending (chars / 4) ; the loop
+  reports the real usage AFTER (the `usage` fields of the API). The
+  estimated vs real difference is the lesson of the elixness experiment (A vs C).
   """
 
   @type section :: :system | :files | :conversation | :tools
 
   @doc """
-  Assemble les messages à envoyer au LLM depuis une description de contexte.
+  Assembles the messages to send to the LLM from a context description.
 
-  Retourne `%{messages: messages, sections: %{section => chars}}` où
-  `sections` compte les caractères de chaque section (pour l'estimation).
+  Returns `%{messages: messages, sections: %{section => chars}}` where
+  `sections` counts the characters of each section (for the estimate).
   """
   def assemble(opts) do
     system = Keyword.get(opts, :system, "")
@@ -28,7 +28,7 @@ defmodule Elixness.Context do
     conversation = Keyword.get(opts, :conversation, [])
     tools = Keyword.get(opts, :tools, [])
 
-    # Les messages finaux : system + fichiers (user) + conversation
+    # Final messages: system + files (user) + conversation
     file_messages =
       Enum.map(files, fn file ->
         content = if is_map(file), do: Map.get(file, :content, ""), else: file
@@ -52,8 +52,8 @@ defmodule Elixness.Context do
   end
 
   @doc """
-  Estime les tokens de chaque section (chars / 4, le standard grossier).
-  Retourne `%{section => tokens}` + `:total`.
+  Estimates the tokens of each section (chars / 4, the rough standard).
+  Returns `%{section => tokens}` + `:total`.
   """
   def estimate(%{sections: sections}) do
     tokens =
@@ -63,8 +63,8 @@ defmodule Elixness.Context do
   end
 
   @doc """
-  Affiche le flamegraph de contexte (breakdown par section + total).
-  Simple texte, prêt à être rendu par le TUI ou le terminal.
+  Displays the context flamegraph (breakdown per section + total).
+  Plain text, ready to be rendered by the TUI or the terminal.
   """
   def flamegraph(%{sections: sections}, limit \\ 128_000) do
     est = estimate(%{sections: sections})

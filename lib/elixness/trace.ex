@@ -1,15 +1,15 @@
 defmodule Elixness.Trace do
   @moduledoc """
-  Le traçage des tool_calls — la trace des actions d'un agent.
+  Tracing of tool_calls — the trace of an agent's actions.
 
-  Un `Agent` qui enregistre chaque tool_call exécuté : horodatage, nom du
-  tool, arguments, résultat (tronqué), durée, et l'identité (agent parent ou
-  child). C'est l'observabilité du harness — voir ce que font les agents en
-  direct (le flamegraph de context-engineering appliqué aux tools).
+  An `Agent` that records every executed tool_call: timestamp, tool name,
+  arguments, result (truncated), duration, and identity (parent agent or
+  child). It's the observability of the harness — see what the agents are
+  doing live (the context-engineering flamegraph applied to tools).
 
-  - `log/3` : enregistre un tool_call.
-  - `events/1` : la liste chronologique.
-  - `summary/1` : un résumé lisible (par tool, compteur, durée totale).
+  - `log/3`: records a tool_call.
+  - `events/1`: the chronological list.
+  - `summary/1`: a readable summary (per tool, counter, total duration).
   """
 
   use Agent
@@ -22,19 +22,19 @@ defmodule Elixness.Trace do
     Agent.start_link(fn -> [] end, opts)
   end
 
-  @doc "Enregistre un tool_call. `%{time, agent, name, args, result, duration_ms}`."
+  @doc "Records a tool_call. `%{time, agent, name, args, result, duration_ms}`."
   def log(trace, event) do
     Agent.update(trace, fn events ->
       [event | events] |> Enum.take(@max_events)
     end)
   end
 
-  @doc "La liste des événements, du plus récent au plus ancien. (pid seulement)"
+  @doc "The list of events, from most recent to oldest. (pid only)"
   def events(trace) when is_pid(trace) do
     Agent.get(trace, & &1)
   end
 
-  @doc "Résumé : compteur par tool + durée totale. Accepte un pid OU un résumé déjà calculé."
+  @doc "Summary: counter per tool + total duration. Accepts a pid OR an already-computed summary."
   def summary(%{events: _} = summary), do: summary
   def summary(trace), do: compute_summary(events(trace))
 
@@ -53,7 +53,7 @@ defmodule Elixness.Trace do
     }
   end
 
-  @doc "Affichage lisible du résumé."
+  @doc "Readable display of the summary."
   def render_summary(trace) do
     %{total: total, counts: counts, total_ms: total_ms} = summary(trace)
 
