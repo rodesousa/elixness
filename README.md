@@ -578,6 +578,30 @@ elixness est ~15x moins cher et plus rapide — le web_search/web_extract
 (DuckDuckGo) suffit pour ce cas, Exa (MCP) à brancher pour aller plus loin
 (priorité 3 roadmap).
 
+### Test 4i — Recherche sur internet, monture actuelle (catalog_select, 2026-08-31)
+
+Re-test de la recherche web avec la monture du jour (escript 16:33). Sujet :
+« dernières actualités et avancées des LLM open-source fin 2026, 3+ sources,
+résumé avec citations ».
+
+- TRACE : **4 web_search + 6 web_extract** (10 tool_calls, ~10.4s cumulées
+  exec). ⚠️ 2 web_search ont échoué en **HTTP 202** (DDG anti-bot) mais le
+  modèle a continué avec les 2 autres + les extractions (résilience au 202).
+- usage : prompt 36 175 (dont cache_read 22 016 → fresh ~14k), completion
+  5 531, **cost 0.0002 $**, ~64s.
+- **Réponse riche et structurée** : 6 sources citées avec URL + dates
+  (Codersera, Tech Insider, NeuralWired, Novita AI, AI Hunter), benchmarks
+  (SWE-Bench, DeepSeek V4 80.6%), modèles (Qwen3.8, GLM-5.3, Llama 4), + une
+  **mise en garde explicite** sur la fiabilité des sources secondaires
+  (blogs vs communiqués officiels) — un niveau de rigueur notable.
+- Contexte chat final : 3 360 tokens.
+
+vs Test 2 (2026-08-27) : plus de sources (6 vs 3) et de tool_calls (10 vs 5)
+→ un peu plus de tokens (36k vs 14.7k) et de temps (64s vs 6s exec), même
+coût dérisoire (~0.0002 $ vs 0.00015 $). La qualité est meilleure (plus de
+sources, dates, mise en garde). Le web reste au même ordre de coût que le
+Test 2 — c'est l'exploration de repo qui a été divisée par ~4, pas le web.
+
 ### Test 3 — Explorer un repo (ex. « quels sont les tools d'opencode ? »)
 
 | | Hermes | elixness explore_repo (2c25719) |
