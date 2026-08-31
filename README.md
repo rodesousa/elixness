@@ -638,6 +638,53 @@ garde-fou budget (`@max_analyze 200` : au-delà, on coupe — le modèle réduit
 périmètre d'abord) + concurrency bornée (20, évite la saturation du pool Finch
 sur les gros repos).
 
+### Test 3c — Re-validation « Comment les skills de deepseek-harness sont gérés ? » (2026-08-31)
+
+Re-validation du Test 3b sur `~/git/deepseek-harness` (~7900 fichiers), la
+MÊME question posée aux 2 moteurs en parallèle (chat elixness vs subagent
+Hermes). Le but : vérifier la peur « elixness émet BCP plus de tokens que
+Hermes en explorant ».
+
+| | Hermes (subagent) | elixness (chat) |
+|---|---|---|
+| api_calls / tool_calls | 9 / 19 | — / 9 (explore_repo:1, glob:3, read:4, search:1) |
+| prompt (input neuf) | 67.7k + cache_read 276k | 577.6k + cache_read 207k |
+| completion | 5.7k | 88.1k |
+| **tokens neufs totaux** | **~73k** | **~666k (9x plus) ❌** |
+| coût | 0.0095 $ | **0.0092 $** ✅ (égal, même léger avantage) |
+| temps | ~69s | ~130s |
+| fichiers analysés | composition ciblée | 200 (garde-fou) |
+| qualité | riche, structurée | riche, structurée |
+
+**Verdict honnête** : la peur du user est FONDÉE et mesurée — elixness émet
+**~9x plus de tokens neufs** que Hermes sur la même question (666k vs 73k).
+MAIS le coût en $ est quasi identique (0.0092 $ vs 0.0095 $) : le token
+DeepSeek est ~10x moins cher + le cache-read (207k) amortit. Le temps passe à
+Hermes cette fois (~69s vs ~130s, l'explore_repo 200 agents plombe le mural).
+**Le point faible confirmé = le VOLUME de tokens d'explore_repo** (1 agent
+LLM/fichier avec contenu complet), pas le $. C'est le chantier de la roadmap
+section 5 (P1 : catalogue en 2 passes). Métriques Hermes : state.db session
+`20260831_125039_8fce0c` (enfant de cette session).
+
+### Test 3d — tool `catalog` (catalogue ZERO-LLM, commit 9173b03, 2026-08-31)
+
+Réponse au point faible du 3c : un tool `catalog(path)` qui extrait par regex
+(module/def Elixir, export/class/function TS, def/class Python, titres md +
+moduledoc de tête) → ~50-100 tokens/fichier au lieu des 4000 chars de
+contenu d'explore_repo. Zéro LLM, ~2s pour 1000 fichiers.
+
+- **Catalogue seul** (deepseek-harness entier) : 1000 fichiers → **~62k tokens
+  est.** (vs 577k pour explorer les mêmes par explore_repo) — la couverture
+  inclut bien `packages/skill/*` (24 fichiers).
+- **Re-test chat avec catalog** (même question) : TRACE `catalog: 1,
+  explore_repo: 1, read_file: 7` → prompt **668k, cost 0.009 $**.
+  ❌ **PAS DE GAIN** : le modèle a appelé catalog PUIS explore_repo quand même
+  (le system prompt le pousse encore vers le « deep analysis » de tout le
+  dossier). Le catalogue est prêt (mécanique, zéro-LLM, ~62k) mais le modèle
+  doit apprendre à s'en servir SANS retomber sur explore_repo — levier =
+  guidance du prompt (catalog → read ciblés, explore_repo réservé au deep
+  analysis explicite).
+
 ## Notes
 
 - Le token est lu brut depuis auth.json : s'il est expiré, l'API répond 401 et
